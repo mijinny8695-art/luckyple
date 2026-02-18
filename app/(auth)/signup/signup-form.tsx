@@ -1,16 +1,16 @@
 'use client'
 
 import { useState } from 'react'
-import { login } from './actions'
+import { signup } from './actions'
 
-export function LoginForm() {
+export function SignupForm() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(formData: FormData) {
     setLoading(true)
     setError(null)
-    const result = await login(formData)
+    const result = await signup(formData)
     if (result?.error) {
       setError(result.error)
       setLoading(false)
@@ -33,7 +33,7 @@ export function LoginForm() {
           name="email"
           type="email"
           required
-          className="w-full rounded-lg border border-zinc-300 px-4 py-2.5 text-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+          className="w-full rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
         />
       </div>
       <div>
@@ -45,7 +45,21 @@ export function LoginForm() {
           name="password"
           type="password"
           required
-          className="w-full rounded-lg border border-zinc-300 px-4 py-2.5 text-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+          minLength={6}
+          className="w-full rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+        />
+      </div>
+      <div>
+        <label htmlFor="confirmPassword" className="mb-1 block text-sm font-medium text-zinc-700">
+          비밀번호 확인
+        </label>
+        <input
+          id="confirmPassword"
+          name="confirmPassword"
+          type="password"
+          required
+          minLength={6}
+          className="w-full rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
         />
       </div>
       <button
@@ -53,12 +67,12 @@ export function LoginForm() {
         disabled={loading}
         className="w-full rounded-lg bg-zinc-900 py-2.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
       >
-        {loading ? '로그인 중...' : '로그인'}
+        {loading ? '가입 중...' : '회원가입'}
       </button>
       <p className="text-center text-sm text-zinc-500">
-        계정이 없으신가요?{' '}
-        <a href="/admin/signup" className="font-medium text-zinc-900 hover:underline">
-          회원가입
+        이미 계정이 있으신가요?{' '}
+        <a href="/login" className="font-medium text-zinc-900 hover:underline">
+          로그인
         </a>
       </p>
     </form>

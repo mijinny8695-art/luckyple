@@ -17,14 +17,16 @@ export async function signup(formData: FormData) {
     return { error: '비밀번호는 최소 6자 이상이어야 합니다.' }
   }
 
-  const { error } = await supabase.auth.signUp({
-    email: formData.get('email') as string,
-    password,
-  })
+  const email = formData.get('email') as string
+
+  const { error } = await supabase.auth.signUp({ email, password })
 
   if (error) {
     return { error: '회원가입 중 오류가 발생했습니다. 다시 시도해주세요.' }
   }
 
-  redirect('/admin/login?message=signup_success')
+  // 회원가입 후 바로 로그인
+  await supabase.auth.signInWithPassword({ email, password })
+
+  redirect('/')
 }

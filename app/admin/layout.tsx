@@ -1,4 +1,4 @@
-export const metadata = { title: '관리자 | 명품 레플리카' }
+export const metadata = { title: '관리자' }
 
 export default function AdminRootLayout({
   children,
