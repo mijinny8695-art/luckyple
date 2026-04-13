@@ -18,12 +18,15 @@ export function ProductForm({ categories }: { categories: FlatCategory[] }) {
   const [loading, setLoading] = useState(false)
   const [thumbnailUrl, setThumbnailUrl] = useState('')
   const [thumbnailPreview, setThumbnailPreview] = useState('')
+  const [subImages, setSubImages] = useState<string[]>([])
   const [summary, setSummary] = useState('')
   const [description, setDescription] = useState('')
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set())
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [uploadingThumb, setUploadingThumb] = useState(false)
+  const [uploadingSub, setUploadingSub] = useState(false)
   const thumbInputRef = useRef<HTMLInputElement>(null)
+  const subInputRef = useRef<HTMLInputElement>(null)
 
   // 하위 카테고리가 있는 카테고리 ID 집합
   const hasChildren = new Set(
@@ -76,6 +79,45 @@ export function ProductForm({ categories }: { categories: FlatCategory[] }) {
     setUploadingThumb(false)
   }
 
+  async function handleSubImagesUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
+    if (files.length === 0) return
+
+    setUploadingSub(true)
+    const uploaded: string[] = []
+
+    for (const file of files) {
+      const formData = new FormData()
+      formData.set('file', file)
+      formData.set('folder', 'thumbnails')
+      const result = await uploadImage(formData)
+      if (result.url) {
+        uploaded.push(result.url)
+      } else {
+        setError(result.error ?? '서브 이미지 업로드 실패')
+      }
+    }
+
+    setSubImages((prev) => [...prev, ...uploaded])
+    setUploadingSub(false)
+    if (subInputRef.current) subInputRef.current.value = ''
+  }
+
+  function removeSubImage(index: number) {
+    setSubImages((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  function promoteToMain(index: number) {
+    setSubImages((prev) => {
+      const next = [...prev]
+      const picked = next.splice(index, 1)[0]
+      if (thumbnailUrl) next.push(thumbnailUrl)
+      setThumbnailUrl(picked)
+      setThumbnailPreview(picked)
+      return next
+    })
+  }
+
   function toggleCategory(id: string) {
     setSelectedCategories((prev) => {
       const next = new Set(prev)
@@ -96,6 +138,7 @@ export function ProductForm({ categories }: { categories: FlatCategory[] }) {
     const form = e.currentTarget
     const formData = new FormData(form)
     formData.set('thumbnail_url', thumbnailUrl)
+    formData.set('sub_images', JSON.stringify(subImages))
     formData.set('summary', summary)
     formData.set('description', description)
     formData.set('category_ids', JSON.stringify([...selectedCategories]))
@@ -122,28 +165,80 @@ export function ProductForm({ categories }: { categories: FlatCategory[] }) {
         <div className="space-y-6 lg:col-span-2">
           {/* 썸네일 */}
           <div className="rounded-xl bg-white p-6 shadow-sm">
-            <h3 className="mb-4 text-lg font-semibold text-zinc-900">썸네일 이미지</h3>
-            <div className="flex items-start gap-4">
-              <div
-                onClick={() => thumbInputRef.current?.click()}
-                className="flex h-40 w-40 cursor-pointer items-center justify-center overflow-hidden rounded-lg border-2 border-dashed border-zinc-300 bg-zinc-50 hover:border-zinc-400"
-              >
-                {thumbnailPreview ? (
-                  <img src={thumbnailPreview} alt="썸네일" className="h-full w-full object-cover" />
-                ) : (
-                  <span className="text-center text-xs text-zinc-400">
-                    {uploadingThumb ? '업로드 중...' : '클릭하여\n이미지 선택'}
-                  </span>
-                )}
+            <h3 className="mb-4 text-lg font-semibold text-zinc-900">상품 이미지</h3>
+
+            {/* 대표 썸네일 */}
+            <div className="mb-6">
+              <label className="mb-2 block text-sm font-medium text-zinc-700">
+                대표 썸네일 <span className="text-red-500">*</span>
+              </label>
+              <div className="flex items-start gap-4">
+                <div
+                  onClick={() => thumbInputRef.current?.click()}
+                  className="flex h-40 w-40 cursor-pointer items-center justify-center overflow-hidden rounded-lg border-2 border-dashed border-zinc-300 bg-zinc-50 hover:border-zinc-400"
+                >
+                  {thumbnailPreview ? (
+                    <img src={thumbnailPreview} alt="썸네일" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="text-center text-xs text-zinc-400">
+                      {uploadingThumb ? '업로드 중...' : '클릭하여\n이미지 선택'}
+                    </span>
+                  )}
+                </div>
+                <input
+                  ref={thumbInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleThumbnailUpload}
+                />
+                <p className="text-xs text-zinc-400">목록/상단에 노출되는 대표 이미지</p>
+              </div>
+            </div>
+
+            {/* 서브 썸네일 */}
+            <div>
+              <label className="mb-2 block text-sm font-medium text-zinc-700">
+                서브 썸네일 {subImages.length > 0 && <span className="text-zinc-400">({subImages.length}장)</span>}
+              </label>
+              <div className="flex flex-wrap gap-3">
+                {subImages.map((url, idx) => (
+                  <div key={`${url}-${idx}`} className="group relative h-28 w-28 overflow-hidden rounded-lg border border-zinc-200">
+                    <img src={url} alt={`서브 ${idx + 1}`} className="h-full w-full object-cover" />
+                    <div className="absolute inset-0 hidden flex-col items-center justify-center gap-1 bg-black/60 group-hover:flex">
+                      <button
+                        type="button"
+                        onClick={() => promoteToMain(idx)}
+                        className="rounded bg-white px-2 py-0.5 text-[10px] font-medium text-zinc-900 hover:bg-zinc-100"
+                      >
+                        대표로
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeSubImage(idx)}
+                        className="rounded bg-red-500 px-2 py-0.5 text-[10px] font-medium text-white hover:bg-red-600"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <div
+                  onClick={() => subInputRef.current?.click()}
+                  className="flex h-28 w-28 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-zinc-300 bg-zinc-50 text-center text-xs text-zinc-400 hover:border-zinc-400"
+                >
+                  {uploadingSub ? '업로드 중...' : '+ 추가'}
+                </div>
               </div>
               <input
-                ref={thumbInputRef}
+                ref={subInputRef}
                 type="file"
                 accept="image/*"
+                multiple
                 className="hidden"
-                onChange={handleThumbnailUpload}
+                onChange={handleSubImagesUpload}
               />
-              <p className="text-xs text-zinc-400">권장 크기: 500x500px</p>
+              <p className="mt-2 text-xs text-zinc-400">여러 장 선택 가능. 이미지에 마우스를 올리면 대표 지정/삭제 가능</p>
             </div>
           </div>
 
@@ -198,7 +293,7 @@ export function ProductForm({ categories }: { categories: FlatCategory[] }) {
           <div className="flex gap-2">
             <button
               type="submit"
-              disabled={loading || uploadingThumb}
+              disabled={loading || uploadingThumb || uploadingSub}
               className="rounded-lg bg-zinc-900 px-6 py-2.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
             >
               {loading ? '저장 중...' : '상품 등록'}

@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 
 export type Category = {
   id: string
+  category_no: string | null
   name: string
   parent_id: string | null
   level: number
@@ -51,6 +52,7 @@ export async function createCategory(formData: FormData) {
   const supabase = await createClient()
 
   const name = formData.get('name') as string
+  const categoryNo = (formData.get('category_no') as string)?.trim() || null
   const parentId = formData.get('parent_id') as string | null
   const sortOrder = parseInt(formData.get('sort_order') as string) || 0
 
@@ -73,6 +75,7 @@ export async function createCategory(formData: FormData) {
 
   const { error } = await supabase.from('categories').insert({
     name,
+    category_no: categoryNo,
     parent_id: parentId || null,
     level,
     sort_order: sortOrder,
@@ -91,11 +94,12 @@ export async function updateCategory(formData: FormData) {
 
   const id = formData.get('id') as string
   const name = formData.get('name') as string
+  const categoryNo = (formData.get('category_no') as string)?.trim() || null
   const sortOrder = parseInt(formData.get('sort_order') as string) || 0
 
   const { error } = await supabase
     .from('categories')
-    .update({ name, sort_order: sortOrder })
+    .update({ name, category_no: categoryNo, sort_order: sortOrder })
     .eq('id', id)
 
   if (error) {

@@ -95,6 +95,13 @@ function TreeNode({
           {category.level}차
         </span>
 
+        {/* 카테고리 번호 */}
+        {category.category_no && (
+          <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-mono text-blue-600">
+            {category.category_no}
+          </span>
+        )}
+
         {/* 이름 */}
         <span className="flex-1 truncate font-medium">{category.name}</span>
 

@@ -60,7 +60,17 @@ export default async function ProductsPage() {
                       )}
                     </td>
                     <td className="px-6 py-3">
-                      <p className="font-medium text-zinc-900">{product.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-zinc-900">{product.name}</p>
+                        {product.category_nos?.map((no) => (
+                          <span
+                            key={no}
+                            className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-mono text-blue-600"
+                          >
+                            {no}
+                          </span>
+                        ))}
+                      </div>
                       {product.summary && (
                         <p className="mt-0.5 truncate text-xs text-zinc-400">{product.summary}</p>
                       )}

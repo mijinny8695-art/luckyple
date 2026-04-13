@@ -57,6 +57,20 @@ export function CategoryForm({
         {parentId && <input type="hidden" name="parent_id" value={parentId} />}
 
         <div>
+          <label htmlFor="category_no" className="mb-1 block text-sm font-medium text-zinc-700">
+            카테고리 번호
+          </label>
+          <input
+            id="category_no"
+            name="category_no"
+            type="text"
+            defaultValue={isEdit ? category.category_no ?? '' : ''}
+            className="w-full rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+            placeholder="예: CATE7"
+          />
+        </div>
+
+        <div>
           <label htmlFor="name" className="mb-1 block text-sm font-medium text-zinc-700">
             카테고리 이름
           </label>

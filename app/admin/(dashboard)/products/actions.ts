@@ -10,10 +10,12 @@ export type Product = {
   description: string | null
   price: number
   thumbnail_url: string | null
+  sub_images: string[] | null
+  category_nos: string[] | null
   is_active: boolean
   created_at: string
   updated_at: string
-  categories?: { id: string; name: string }[]
+  categories?: { id: string; name: string; category_no: string | null }[]
 }
 
 export async function getProducts() {
@@ -35,15 +37,21 @@ export async function getProducts() {
 
   const { data: categories } = await supabase
     .from('categories')
-    .select('id, name')
+    .select('id, name, category_no')
 
-  const categoryMap = new Map(categories?.map((c) => [c.id, c.name]) ?? [])
+  const categoryMap = new Map(
+    categories?.map((c) => [c.id, { name: c.name, category_no: c.category_no }]) ?? []
+  )
 
   return products.map((product) => ({
     ...product,
     categories: (relations ?? [])
       .filter((r) => r.product_id === product.id)
-      .map((r) => ({ id: r.category_id, name: categoryMap.get(r.category_id) ?? '' })),
+      .map((r) => ({
+        id: r.category_id,
+        name: categoryMap.get(r.category_id)?.name ?? '',
+        category_no: categoryMap.get(r.category_id)?.category_no ?? null,
+      })),
   })) as Product[]
 }
 
@@ -51,7 +59,7 @@ export async function getAllCategoriesFlat() {
   const supabase = await createClient()
   const { data } = await supabase
     .from('categories')
-    .select('id, name, parent_id, level')
+    .select('id, name, category_no, parent_id, level')
     .order('level')
     .order('sort_order')
 
@@ -74,7 +82,21 @@ export async function createProduct(formData: FormData) {
   const description = formData.get('description') as string
   const price = parseInt(formData.get('price') as string) || 0
   const thumbnailUrl = formData.get('thumbnail_url') as string
+  const subImages = JSON.parse(formData.get('sub_images') as string || '[]') as string[]
   const categoryIds = JSON.parse(formData.get('category_ids') as string || '[]') as string[]
+
+  // 선택된 카테고리들의 category_no를 모두 수집해서 저장
+  let categoryNos: string[] = []
+  if (categoryIds.length > 0) {
+    const { data: cats } = await supabase
+      .from('categories')
+      .select('category_no')
+      .in('id', categoryIds)
+      .not('category_no', 'is', null)
+    categoryNos = (cats ?? [])
+      .map((c) => c.category_no)
+      .filter((v): v is string => !!v)
+  }
 
   const { data: product, error } = await supabase
     .from('products')
@@ -84,6 +106,8 @@ export async function createProduct(formData: FormData) {
       description,
       price,
       thumbnail_url: thumbnailUrl || null,
+      sub_images: subImages,
+      category_nos: categoryNos,
     })
     .select('id')
     .single()
