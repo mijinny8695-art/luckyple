@@ -10,6 +10,8 @@ export type Category = {
   parent_id: string | null
   level: number
   sort_order: number
+  image_url: string | null
+  is_main: boolean
   created_at: string
   children?: Category[]
 }
@@ -48,6 +50,14 @@ function buildTree(items: Category[]): Category[] {
   return roots
 }
 
+export async function uploadCategoryImage(formData: FormData) {
+  const file = formData.get('file') as File
+  if (!file) return { error: '파일이 없습니다.' }
+
+  const { uploadToCloudflare } = await import('@/lib/cloudflare-images')
+  return uploadToCloudflare(file)
+}
+
 export async function createCategory(formData: FormData) {
   const supabase = await createClient()
 
@@ -55,6 +65,8 @@ export async function createCategory(formData: FormData) {
   const categoryNo = (formData.get('category_no') as string)?.trim() || null
   const parentId = formData.get('parent_id') as string | null
   const sortOrder = parseInt(formData.get('sort_order') as string) || 0
+  const imageUrl = (formData.get('image_url') as string)?.trim() || null
+  const isMain = formData.get('is_main') === 'true'
 
   let level = 1
   if (parentId) {
@@ -79,6 +91,8 @@ export async function createCategory(formData: FormData) {
     parent_id: parentId || null,
     level,
     sort_order: sortOrder,
+    image_url: imageUrl,
+    is_main: isMain,
   })
 
   if (error) {
@@ -96,10 +110,12 @@ export async function updateCategory(formData: FormData) {
   const name = formData.get('name') as string
   const categoryNo = (formData.get('category_no') as string)?.trim() || null
   const sortOrder = parseInt(formData.get('sort_order') as string) || 0
+  const imageUrl = (formData.get('image_url') as string)?.trim() || null
+  const isMain = formData.get('is_main') === 'true'
 
   const { error } = await supabase
     .from('categories')
-    .update({ name, category_no: categoryNo, sort_order: sortOrder })
+    .update({ name, category_no: categoryNo, sort_order: sortOrder, image_url: imageUrl, is_main: isMain })
     .eq('id', id)
 
   if (error) {

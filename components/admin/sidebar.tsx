@@ -6,6 +6,7 @@ import { SidebarSiteSelector } from './sidebar-site-selector'
 
 const navItems = [
   { href: '/admin', label: '대시보드' },
+  { href: '/admin/stats', label: '페이지 통계' },
   { href: '/admin/design', label: '디자인 관리' },
   { href: '/admin/categories', label: '카테고리 관리' },
   { href: '/admin/products', label: '상품 관리' },

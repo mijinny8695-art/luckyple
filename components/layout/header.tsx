@@ -1,14 +1,8 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { HeaderAuth } from './header-auth'
+import { HeaderCategories } from './header-categories'
 import type { NavItem } from '@/lib/types/design'
-
-const defaultNavItems: NavItem[] = [
-  { label: '신상품', href: '/' },
-  { label: '베스트', href: '/' },
-  { label: '브랜드', href: '/' },
-  { label: '카테고리', href: '/' },
-]
 
 export async function Header({
   siteName,
@@ -30,7 +24,14 @@ export async function Header({
     isAdmin = profile?.role === 'admin'
   }
 
-  const items = navItems && navItems.length > 0 ? navItems : defaultNavItems
+  const { data: categories } = await supabase
+    .from('categories')
+    .select('id, name, parent_id, level')
+    .lte('level', 2)
+    .order('level')
+    .order('sort_order')
+
+  const items = navItems && navItems.length > 0 ? navItems : []
 
   return (
     <header className="sticky top-0 z-50 border-b border-zinc-100 bg-white/80 backdrop-blur-md">
@@ -38,7 +39,7 @@ export async function Header({
         <Link href="/" className="text-xl font-bold tracking-widest text-zinc-900">
           {siteName}
         </Link>
-        <nav className="hidden gap-8 md:flex">
+        <nav className="hidden items-center gap-8 md:flex">
           {items.map((item, index) => (
             <Link
               key={`${item.href}-${index}`}
@@ -48,6 +49,7 @@ export async function Header({
               {item.label}
             </Link>
           ))}
+          <HeaderCategories categories={categories ?? []} />
         </nav>
         <div className="flex items-center gap-4">
           <HeaderAuth user={user} isAdmin={isAdmin} />

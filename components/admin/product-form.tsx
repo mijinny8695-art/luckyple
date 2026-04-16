@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { createProduct, uploadImage } from '@/app/admin/(dashboard)/products/actions'
+import { createProduct, updateProduct, uploadImage } from '@/app/admin/(dashboard)/products/actions'
 import { TiptapEditor } from './tiptap-editor'
 
 type FlatCategory = {
@@ -12,17 +12,47 @@ type FlatCategory = {
   level: number
 }
 
-export function ProductForm({ categories }: { categories: FlatCategory[] }) {
+type ProductInitial = {
+  id: string
+  name: string
+  summary: string | null
+  description: string | null
+  price: number
+  thumbnail_url: string | null
+  sub_images: string[] | null
+  category_ids: string[]
+}
+
+export function ProductForm({
+  categories,
+  product,
+}: {
+  categories: FlatCategory[]
+  product?: ProductInitial
+}) {
+  const isEdit = !!product
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [thumbnailUrl, setThumbnailUrl] = useState('')
-  const [thumbnailPreview, setThumbnailPreview] = useState('')
-  const [subImages, setSubImages] = useState<string[]>([])
-  const [summary, setSummary] = useState('')
-  const [description, setDescription] = useState('')
-  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set())
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
+  const [thumbnailUrl, setThumbnailUrl] = useState(product?.thumbnail_url ?? '')
+  const [thumbnailPreview, setThumbnailPreview] = useState(product?.thumbnail_url ?? '')
+  const [subImages, setSubImages] = useState<string[]>(product?.sub_images ?? [])
+  const [summary, setSummary] = useState(product?.summary ?? '')
+  const [description, setDescription] = useState(product?.description ?? '')
+  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(
+    new Set(product?.category_ids ?? [])
+  )
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(() => {
+    const expanded = new Set<string>()
+    for (const id of product?.category_ids ?? []) {
+      let parentId = categories.find((c) => c.id === id)?.parent_id ?? null
+      while (parentId) {
+        expanded.add(parentId)
+        parentId = categories.find((c) => c.id === parentId)?.parent_id ?? null
+      }
+    }
+    return expanded
+  })
   const [uploadingThumb, setUploadingThumb] = useState(false)
   const [uploadingSub, setUploadingSub] = useState(false)
   const thumbInputRef = useRef<HTMLInputElement>(null)
@@ -143,7 +173,9 @@ export function ProductForm({ categories }: { categories: FlatCategory[] }) {
     formData.set('description', description)
     formData.set('category_ids', JSON.stringify([...selectedCategories]))
 
-    const result = await createProduct(formData)
+    const result = isEdit
+      ? await updateProduct(product!.id, formData)
+      : await createProduct(formData)
     if (result?.error) {
       setError(result.error)
       setLoading(false)
@@ -256,6 +288,7 @@ export function ProductForm({ categories }: { categories: FlatCategory[] }) {
                     name="name"
                     type="text"
                     required
+                    defaultValue={product?.name ?? ''}
                     className="w-full rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
                     placeholder="상품명을 입력하세요"
                   />
@@ -270,6 +303,7 @@ export function ProductForm({ categories }: { categories: FlatCategory[] }) {
                     type="number"
                     required
                     min={0}
+                    defaultValue={product?.price ?? ''}
                     className="w-full rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
                     placeholder="0"
                   />
@@ -296,7 +330,7 @@ export function ProductForm({ categories }: { categories: FlatCategory[] }) {
               disabled={loading || uploadingThumb || uploadingSub}
               className="rounded-lg bg-zinc-900 px-6 py-2.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
             >
-              {loading ? '저장 중...' : '상품 등록'}
+              {loading ? '저장 중...' : isEdit ? '상품 수정' : '상품 등록'}
             </button>
             <button
               type="button"

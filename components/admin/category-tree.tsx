@@ -102,6 +102,18 @@ function TreeNode({
           </span>
         )}
 
+        {/* 메인 표시 뱃지 */}
+        {category.is_main && (
+          <span className="rounded bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-600">
+            메인
+          </span>
+        )}
+
+        {/* 이미지 표시 */}
+        {category.image_url && (
+          <img src={category.image_url} alt="" className="h-5 w-5 rounded object-cover" />
+        )}
+
         {/* 이름 */}
         <span className="flex-1 truncate font-medium">{category.name}</span>
 
