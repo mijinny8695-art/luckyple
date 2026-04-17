@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/baecheol-eung/shopping/supabase/migrations/**)",
+      "Read(//Users/baecheol-eung/shopping/lib/supabase/**)",
+      "Read(//Users/baecheol-eung/shopping/**)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_863eccdf3270447e03abcc0ccd7009a8532ba4ec supabase db push)"
+    ],
+    "additionalDirectories": [
+      "/Users/baecheol-eung/shopping/supabase/migrations",
+      "/Users/baecheol-eung/shopping/supabase"
+    ]
+  }
+}
