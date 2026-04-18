@@ -3,7 +3,8 @@
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
-import { useRef } from 'react'
+import TextAlign from '@tiptap/extension-text-align'
+import { useRef, useState, useCallback } from 'react'
 import { uploadImage } from '@/app/admin/(dashboard)/products/actions'
 
 export function TiptapEditor({
@@ -16,12 +17,17 @@ export function TiptapEditor({
   minHeight?: string
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
 
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
       StarterKit,
       Image.configure({ inline: false }),
+      TextAlign.configure({
+        types: ['heading', 'paragraph'],
+      }),
     ],
     content,
     onUpdate: ({ editor }) => {
@@ -32,31 +38,74 @@ export function TiptapEditor({
         class: `prose prose-sm max-w-none px-4 py-3 focus:outline-none`,
         style: `min-height: ${minHeight}`,
       },
+      handleDrop: (view, event) => {
+        const files = event.dataTransfer?.files
+        if (files && files.length > 0) {
+          event.preventDefault()
+          handleFiles(Array.from(files))
+          return true
+        }
+        return false
+      },
+      handlePaste: (view, event) => {
+        const files = event.clipboardData?.files
+        if (files && files.length > 0) {
+          event.preventDefault()
+          handleFiles(Array.from(files))
+          return true
+        }
+        return false
+      },
     },
   })
+
+  const handleFiles = useCallback(async (files: File[]) => {
+    if (!editor) return
+
+    const imageFiles = files.filter((f) => f.type.startsWith('image/'))
+    if (imageFiles.length === 0) return
+
+    setUploading(true)
+
+    for (const file of imageFiles) {
+      const formData = new FormData()
+      formData.set('file', file)
+      formData.set('folder', 'descriptions')
+
+      const result = await uploadImage(formData)
+      if (result.url) {
+        editor.chain().focus().setImage({ src: result.url }).run()
+      }
+    }
+
+    setUploading(false)
+  }, [editor])
 
   if (!editor) return null
 
   async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file || !editor) return
+    const files = e.target.files
+    if (!files || files.length === 0 || !editor) return
 
-    const formData = new FormData()
-    formData.set('file', file)
-    formData.set('folder', 'descriptions')
-
-    const result = await uploadImage(formData)
-    if (result.url) {
-      editor.chain().focus().setImage({ src: result.url }).run()
-    }
+    await handleFiles(Array.from(files))
 
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-zinc-300">
+    <div
+      className={`overflow-hidden rounded-lg border ${
+        dragOver ? 'border-zinc-900 bg-zinc-50' : 'border-zinc-300'
+      } transition-colors`}
+      onDragOver={(e) => {
+        e.preventDefault()
+        setDragOver(true)
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={() => setDragOver(false)}
+    >
       {/* 툴바 */}
-      <div className="flex flex-wrap gap-1 border-b border-zinc-200 bg-zinc-50 p-2">
+      <div className="flex flex-wrap items-center gap-1 border-b border-zinc-200 bg-zinc-50 p-2">
         <ToolButton
           active={editor.isActive('bold')}
           onClick={() => editor.chain().focus().toggleBold().run()}
@@ -94,6 +143,27 @@ export function TiptapEditor({
         <div className="mx-1 w-px bg-zinc-200" />
 
         <ToolButton
+          active={editor.isActive({ textAlign: 'left' })}
+          onClick={() => editor.chain().focus().setTextAlign('left').run()}
+        >
+          좌
+        </ToolButton>
+        <ToolButton
+          active={editor.isActive({ textAlign: 'center' })}
+          onClick={() => editor.chain().focus().setTextAlign('center').run()}
+        >
+          중
+        </ToolButton>
+        <ToolButton
+          active={editor.isActive({ textAlign: 'right' })}
+          onClick={() => editor.chain().focus().setTextAlign('right').run()}
+        >
+          우
+        </ToolButton>
+
+        <div className="mx-1 w-px bg-zinc-200" />
+
+        <ToolButton
           active={editor.isActive('bulletList')}
           onClick={() => editor.chain().focus().toggleBulletList().run()}
         >
@@ -118,14 +188,28 @@ export function TiptapEditor({
           ref={fileInputRef}
           type="file"
           accept="image/*"
+          multiple
           className="hidden"
           onChange={handleImageUpload}
         />
+
+        {uploading && (
+          <span className="ml-2 text-xs text-zinc-500">
+            업로드 중...
+          </span>
+        )}
       </div>
 
       {/* 에디터 */}
-      <div className="bg-white">
+      <div className="relative bg-white">
         <EditorContent editor={editor} />
+        {dragOver && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-zinc-900/10">
+            <p className="rounded-lg bg-white px-6 py-3 text-sm font-medium text-zinc-900 shadow-lg">
+              이미지를 여기에 놓으세요
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )

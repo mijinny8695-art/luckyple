@@ -56,6 +56,7 @@ export type LayoutSection =
 export type SiteDesign = {
   id: string
   site_id: string
+  logo_url: string | null
   hero_title: string | null
   hero_subtitle: string | null
   hero_cta_text: string
@@ -70,5 +71,12 @@ export type SiteDesign = {
   show_brands_section: boolean
   brands_list: string[]
   homepage_layout: LayoutSection[] | null
+  seo_title: string | null
+  seo_description: string | null
+  seo_keywords: string | null
+  seo_og_image: string | null
+  seo_favicon: string | null
+  seo_google_verification: string | null
+  seo_naver_verification: string | null
   created_at: string
 }
