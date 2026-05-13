@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getSiteConfig } from '@/lib/site'
+import { getSiteConfig, getSiteConfigFull } from '@/lib/site'
 import { CategoryProductList } from '@/components/mall/category-product-list'
 import type { Metadata } from 'next'
 
@@ -44,7 +44,7 @@ export default async function CategoryPage({
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
   const { data: category } = await supabase
     .from('categories')
-    .select('id, name, slug, category_no, level, parent_id, banner_url, banner_title, banner_video_url')
+    .select('id, name, slug, category_no, level, parent_id')
     .eq(isUuid ? 'id' : 'slug', id)
     .single()
 
@@ -55,7 +55,7 @@ export default async function CategoryPage({
   if (category.level === 2 && category.parent_id) {
     const { data: parent } = await supabase
       .from('categories')
-      .select('id, name, slug, category_no, banner_url, banner_title, banner_video_url')
+      .select('id, name, slug, category_no')
       .eq('id', category.parent_id)
       .single()
     if (parent) rootCategory = { ...parent, level: 1, parent_id: null }
@@ -69,7 +69,7 @@ export default async function CategoryPage({
     if (parent2?.parent_id) {
       const { data: parent1 } = await supabase
         .from('categories')
-        .select('id, name, slug, category_no, banner_url, banner_title, banner_video_url')
+        .select('id, name, slug, category_no')
         .eq('id', parent2.parent_id)
         .single()
       if (parent1) rootCategory = { ...parent1, level: 1, parent_id: null }
@@ -130,16 +130,17 @@ export default async function CategoryPage({
     total = count ?? 0
   }
 
-  const bannerUrl = rootCategory.banner_url || category.banner_url
-  const bannerVideoUrl = (rootCategory as any).banner_video_url || (category as any).banner_video_url
-  const bannerTitle = rootCategory.banner_title || category.banner_title || rootCategory.name
+  // 글로벌 카테고리 배너 설정 가져오기
+  const siteConfig = await getSiteConfigFull()
+  const bannerUrl = siteConfig.design?.category_banner_url ?? null
+  const bannerVideoUrl = siteConfig.design?.category_banner_video_url ?? null
 
   return (
     <div>
       {/* 배너 */}
       {bannerVideoUrl ? (
         <div className="relative mx-auto max-w-[1920px]">
-          <div className="relative h-[200px] md:h-[300px] overflow-hidden">
+          <div className="relative h-[200px] md:h-[450px] overflow-hidden">
             <video
               src={bannerVideoUrl}
               autoPlay
@@ -148,38 +149,38 @@ export default async function CategoryPage({
               playsInline
               className="h-full w-full object-cover"
             />
-            <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-              <h1 className="text-3xl font-bold tracking-wider text-white md:text-5xl">{bannerTitle}</h1>
+            <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-6 md:gap-8">
+              <div className="flex flex-col items-center">
+                <span className="text-5xl md:text-8xl text-white tracking-widest" style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic' }}>HIGH-END</span>
+                <span className="text-2xl md:text-4xl text-white tracking-[0.5em] md:tracking-[0.55em]" style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic' }}>MYEONGPLE</span>
+              </div>
+              <div className="flex gap-3 md:gap-4">
+                <Link href="/board/process" className="bg-black border border-white/30 px-10 py-2.5 md:px-16 md:py-3 text-sm md:text-base text-white tracking-wider hover:bg-zinc-800 transition">제작과정</Link>
+                <Link href="/board/review" className="bg-black border border-white/30 px-10 py-2.5 md:px-16 md:py-3 text-sm md:text-base text-white tracking-wider hover:bg-zinc-800 transition">구매후기</Link>
+              </div>
             </div>
           </div>
         </div>
       ) : bannerUrl ? (
         <div className="relative mx-auto max-w-[1920px]">
-          <div className="relative h-[200px] md:h-[300px] overflow-hidden">
-            <img src={bannerUrl} alt={bannerTitle} className="h-full w-full object-cover" />
-            <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-              <h1 className="text-3xl font-bold tracking-wider text-white md:text-5xl">{bannerTitle}</h1>
-            </div>
+          <div className="h-[200px] md:h-[450px] overflow-hidden">
+            <img src={bannerUrl} alt="카테고리 배너" className="h-full w-full object-cover" />
           </div>
         </div>
-      ) : (
-        <div className="bg-zinc-900 py-12 text-center">
-          <h1 className="text-3xl font-bold tracking-wider text-white md:text-4xl">{bannerTitle}</h1>
-        </div>
-      )}
+      ) : null}
 
       {/* 2차 카테고리 이미지 썸네일 */}
       {subCategories && subCategories.length > 0 && (
         <div className="bg-white py-6">
           <div className="mx-auto max-w-7xl px-4">
-            <div className="grid grid-cols-4 gap-3 md:grid-cols-9">
+            <div className="grid grid-cols-4 gap-3 md:flex md:flex-wrap md:justify-center md:gap-4">
               {subCategories.map((sub) => {
                 const isActive = sub.id === category.id || (category.level === 3 && category.parent_id === sub.id)
                 return (
                   <Link
                     key={sub.id}
                     href={`/category/${sub.slug || sub.id}`}
-                    className={`flex flex-col items-center gap-2 ${isActive ? 'opacity-100' : 'opacity-70 hover:opacity-100'}`}
+                    className={`flex flex-col items-center gap-2 md:w-[100px] ${isActive ? 'opacity-100' : 'opacity-70 hover:opacity-100'}`}
                   >
                     <div className="aspect-square w-full overflow-hidden rounded-lg bg-zinc-100">
                       {sub.image_url ? (

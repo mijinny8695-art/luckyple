@@ -93,6 +93,28 @@ export async function upsertDesign(siteId: string, formData: FormData) {
 
   const featuredCategoryId = (formData.get('featured_category_id') as string)?.trim() || null
 
+  const categoryBannerTitle = (formData.get('category_banner_title') as string)?.trim() || null
+
+  // 카테고리 배너 이미지 업로드
+  let categoryBannerImageUrl: string | null | undefined = undefined
+  const categoryBannerFile = formData.get('category_banner_image') as File
+  if (categoryBannerFile && categoryBannerFile.size > 0) {
+    const catBannerUpload = await uploadToCloudflare(categoryBannerFile)
+    if (catBannerUpload.error) return { error: catBannerUpload.error }
+    categoryBannerImageUrl = catBannerUpload.url ?? null
+  }
+  const removeCategoryBanner = formData.get('remove_category_banner') === 'true'
+  if (removeCategoryBanner) categoryBannerImageUrl = null
+
+  // 카테고리 배너 영상 URL (클라이언트에서 R2 직접 업로드 후 URL 전달)
+  let categoryBannerVideoUrl: string | null | undefined = undefined
+  const videoUrlFromClient = (formData.get('category_banner_video_url') as string)?.trim()
+  if (videoUrlFromClient) {
+    categoryBannerVideoUrl = videoUrlFromClient
+  }
+  const removeCategoryVideo = formData.get('remove_category_video') === 'true'
+  if (removeCategoryVideo) categoryBannerVideoUrl = null
+
   const upsertData: Record<string, unknown> = {
     site_id: siteId,
     hero_title: heroTitle,
@@ -107,6 +129,15 @@ export async function upsertDesign(siteId: string, formData: FormData) {
     brands_list: brandsList,
     display_category_ids: displayCategoryIds,
     featured_category_id: featuredCategoryId,
+    category_banner_title: categoryBannerTitle,
+  }
+
+  if (categoryBannerImageUrl !== undefined) {
+    upsertData.category_banner_url = categoryBannerImageUrl
+  }
+
+  if (categoryBannerVideoUrl !== undefined) {
+    upsertData.category_banner_video_url = categoryBannerVideoUrl
   }
 
   if (logoUrl !== undefined) {
@@ -124,6 +155,7 @@ export async function upsertDesign(siteId: string, formData: FormData) {
 
   revalidatePath('/admin/design')
   revalidatePath('/')
+  revalidatePath('/category/[id]', 'page')
   return { success: true }
 }
 

@@ -64,6 +64,88 @@ export function DesignManager({
     if (input) input.value = ''
   }
 
+  // 카테고리 배너
+  const [catBannerPreview, setCatBannerPreview] = useState<string | null>(design?.category_banner_url ?? null)
+  const [removeCatBanner, setRemoveCatBanner] = useState(false)
+
+  function handleCatBannerChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) {
+      setCatBannerPreview(URL.createObjectURL(file))
+      setRemoveCatBanner(false)
+    }
+  }
+
+  function handleRemoveCatBanner() {
+    setCatBannerPreview(null)
+    setRemoveCatBanner(true)
+    const input = document.getElementById('category_banner_image') as HTMLInputElement
+    if (input) input.value = ''
+  }
+
+  // 카테고리 배너 영상 (R2 직접 업로드)
+  const [catVideoUrl, setCatVideoUrl] = useState<string | null>(design?.category_banner_video_url ?? null)
+  const [catVideoName, setCatVideoName] = useState<string | null>(
+    design?.category_banner_video_url ? design.category_banner_video_url.split('/').pop() ?? '등록됨' : null
+  )
+  const [removeCatVideo, setRemoveCatVideo] = useState(false)
+  const [videoUploading, setVideoUploading] = useState(false)
+  const [videoProgress, setVideoProgress] = useState(0)
+
+  async function handleCatVideoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setVideoUploading(true)
+    setVideoProgress(0)
+    setCatVideoName(file.name)
+
+    try {
+      // 1. 서버에서 presigned URL 받기
+      const res = await fetch('/api/upload-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName: file.name, contentType: file.type }),
+      })
+      const { signedUrl, publicUrl, error: urlError } = await res.json()
+      if (urlError) throw new Error(urlError)
+
+      // 2. 브라우저에서 R2로 직접 업로드
+      const xhr = new XMLHttpRequest()
+      await new Promise<void>((resolve, reject) => {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setVideoProgress(Math.round((e.loaded / e.total) * 100))
+        }
+        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error('업로드 실패')))
+        xhr.onerror = () => reject(new Error('업로드 실패'))
+        xhr.open('PUT', signedUrl)
+        xhr.setRequestHeader('Content-Type', file.type || 'video/mp4')
+        xhr.send(file)
+      })
+
+      setCatVideoUrl(publicUrl)
+      setRemoveCatVideo(false)
+      // 파일 input 비우기 (폼 제출 시 서버로 영상 파일이 전송되지 않도록)
+      const input = document.getElementById('category_banner_video') as HTMLInputElement
+      if (input) input.value = ''
+    } catch (err) {
+      setCatVideoName(null)
+      setCatVideoUrl(null)
+      alert(err instanceof Error ? err.message : '영상 업로드 실패')
+    } finally {
+      setVideoUploading(false)
+      setVideoProgress(0)
+    }
+  }
+
+  function handleRemoveCatVideo() {
+    setCatVideoName(null)
+    setCatVideoUrl(null)
+    setRemoveCatVideo(true)
+    const input = document.getElementById('category_banner_video') as HTMLInputElement
+    if (input) input.value = ''
+  }
+
   // 네비게이션 항목
   const [navItems, setNavItems] = useState<NavItem[]>(
     design?.nav_items ?? [
@@ -132,6 +214,9 @@ export function DesignManager({
     formData.set('display_category_ids', JSON.stringify(displayCategoryIds))
     formData.set('featured_category_id', featuredCategoryId)
     if (removeLogo) formData.set('remove_logo', 'true')
+    if (removeCatBanner) formData.set('remove_category_banner', 'true')
+    if (removeCatVideo) formData.set('remove_category_video', 'true')
+    if (catVideoUrl) formData.set('category_banner_video_url', catVideoUrl)
 
     const result = await upsertDesign(siteId, formData)
 
@@ -309,6 +394,124 @@ export function DesignManager({
                 placeholder="/"
               />
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 카테고리 페이지 배너 */}
+      <div className="rounded-xl bg-white p-6 shadow-sm">
+        <h3 className="mb-4 text-lg font-semibold text-zinc-900">카테고리 페이지 배너</h3>
+        <p className="mb-4 text-sm text-zinc-500">
+          모든 카테고리 페이지 상단에 공통으로 표시되는 배너입니다.
+        </p>
+
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="category_banner_title" className="mb-1 block text-sm font-medium text-zinc-700">
+              배너 타이틀
+            </label>
+            <input
+              id="category_banner_title"
+              name="category_banner_title"
+              type="text"
+              defaultValue={design?.category_banner_title ?? ''}
+              className="w-full rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+              placeholder="1:1 하이엔드 미러급"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-zinc-700">배너 이미지</label>
+            <div className="flex items-start gap-4">
+              {catBannerPreview ? (
+                <div className="relative">
+                  <img
+                    src={catBannerPreview}
+                    alt="카테고리 배너 미리보기"
+                    className="h-24 w-auto max-w-[300px] rounded-lg border border-zinc-200 object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleRemoveCatBanner}
+                    className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs text-white hover:bg-red-600"
+                  >
+                    &times;
+                  </button>
+                </div>
+              ) : (
+                <div className="flex h-24 w-[300px] items-center justify-center rounded-lg border-2 border-dashed border-zinc-300 text-sm text-zinc-400">
+                  이미지 없음
+                </div>
+              )}
+              <div>
+                <label
+                  htmlFor="category_banner_image"
+                  className="inline-block cursor-pointer rounded-lg bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-200"
+                >
+                  {catBannerPreview ? '이미지 변경' : '이미지 업로드'}
+                </label>
+                <input
+                  id="category_banner_image"
+                  name="category_banner_image"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleCatBannerChange}
+                  className="hidden"
+                />
+                <p className="mt-1 text-xs text-zinc-400">권장 사이즈: 1920 x 300px</p>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-zinc-700">배너 영상 (선택)</label>
+            <div className="flex items-center gap-4">
+              {catVideoName ? (
+                <div className="flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2">
+                  <svg className="h-5 w-5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="max-w-[200px] truncate text-sm text-zinc-700">{catVideoName}</span>
+                  {!videoUploading && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveCatVideo}
+                      className="text-red-500 hover:text-red-600"
+                    >
+                      &times;
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="flex h-10 w-[200px] items-center justify-center rounded-lg border-2 border-dashed border-zinc-300 text-sm text-zinc-400">
+                  영상 없음
+                </div>
+              )}
+              <div>
+                <label
+                  htmlFor="category_banner_video"
+                  className={`inline-block cursor-pointer rounded-lg bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-200 ${videoUploading ? 'pointer-events-none opacity-50' : ''}`}
+                >
+                  {videoUploading ? `업로드 중... ${videoProgress}%` : catVideoName ? '영상 변경' : '영상 업로드'}
+                </label>
+                <input
+                  id="category_banner_video"
+                  name="category_banner_video"
+                  type="file"
+                  accept="video/*"
+                  onChange={handleCatVideoChange}
+                  className="hidden"
+                  disabled={videoUploading}
+                />
+              </div>
+            </div>
+            {videoUploading && (
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-200">
+                <div className="h-full bg-zinc-900 transition-all" style={{ width: `${videoProgress}%` }} />
+              </div>
+            )}
+            <p className="mt-1 text-xs text-zinc-400">영상이 등록되면 이미지 대신 영상이 자동재생됩니다. (MP4 권장)</p>
           </div>
         </div>
       </div>
@@ -540,10 +743,10 @@ export function DesignManager({
       <div className="flex justify-end">
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || videoUploading}
           className="rounded-lg bg-zinc-900 px-8 py-2.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
         >
-          {loading ? '저장 중...' : '설정 저장'}
+          {loading ? '저장 중...' : videoUploading ? '영상 업로드 중...' : '설정 저장'}
         </button>
       </div>
     </form>

@@ -97,5 +97,8 @@ export type SiteDesign = {
   seo_favicon: string | null
   seo_google_verification: string | null
   seo_naver_verification: string | null
+  category_banner_title: string | null
+  category_banner_url: string | null
+  category_banner_video_url: string | null
   created_at: string
 }
