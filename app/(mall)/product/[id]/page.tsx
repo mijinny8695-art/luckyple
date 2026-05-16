@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { getSiteConfig } from '@/lib/site'
+import { getSiteConfig, getSiteConfigFull } from '@/lib/site'
 import { ProductGallery } from '@/components/mall/product-gallery'
 import { AddToCartButton } from '@/components/mall/add-to-cart-button'
 import type { Metadata } from 'next'
@@ -81,8 +81,13 @@ export default async function ProductPage({
     ...((product.sub_images as string[]) ?? []),
   ]
 
+  const siteConfig = await getSiteConfigFull()
+  const topHtml = siteConfig.design?.product_detail_top_html
+  const bottomHtml = siteConfig.design?.product_detail_bottom_html
+
   return (
-    <div className="mx-auto max-w-7xl px-4 py-12">
+    <div>
+      <div className="mx-auto max-w-7xl px-4 py-12">
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-2">
         {/* 이미지 갤러리 */}
         <div>
@@ -119,24 +124,36 @@ export default async function ProductPage({
           )}
 
           <div className="mt-8 flex gap-3">
-            <button className="flex-1 rounded-lg bg-zinc-900 py-3 text-sm font-medium text-white hover:bg-zinc-800">
+            <a href="https://open.kakao.com/o/sXBFQ9ag" target="_blank" rel="noopener noreferrer" className="flex-1 rounded-lg bg-zinc-900 py-3 text-center text-sm font-medium text-white hover:bg-zinc-800">
               구매하기
-            </button>
+            </a>
             <AddToCartButton productId={product.id} />
           </div>
         </div>
       </div>
 
       {/* 상세 설명 */}
-      {product.description && (
-        <div className="mt-16 border-t border-zinc-200 pt-12">
-          <h2 className="mb-6 text-lg font-bold text-zinc-900">상세 정보</h2>
+      <div className="mt-16 border-t border-zinc-200 pt-12">
+        <h2 className="mb-6 text-lg font-bold text-zinc-900">상세 정보</h2>
+
+        {/* 상단 고정 콘텐츠 */}
+        {topHtml && (
+          <div className="prose max-w-none mb-8" dangerouslySetInnerHTML={{ __html: topHtml }} />
+        )}
+
+        {product.description && (
           <div
             className="prose max-w-none text-zinc-700"
             dangerouslySetInnerHTML={{ __html: product.description }}
           />
-        </div>
-      )}
+        )}
+
+        {/* 하단 고정 콘텐츠 */}
+        {bottomHtml && (
+          <div className="prose max-w-none mt-8" dangerouslySetInnerHTML={{ __html: bottomHtml }} />
+        )}
+      </div>
+    </div>
     </div>
   )
 }

@@ -8,6 +8,7 @@ import type {
   BannerSectionConfig,
   FeaturedSectionConfig,
   CategoriesSectionConfig,
+  CardBannerGroupConfig,
   CategoryCard,
 } from '@/lib/types/design'
 import { saveLayout } from './actions'
@@ -46,6 +47,11 @@ export function LayoutManager({
   const [pickerIndex, setPickerIndex] = useState<number>(-1)
   const [showAddMenu, setShowAddMenu] = useState(false)
   const [editingCategoryIndex, setEditingCategoryIndex] = useState<number | null>(null)
+  const [categoryLabel, setCategoryLabel] = useState('')
+  const [categorySubtitle, setCategorySubtitle] = useState('')
+  const [editingCardBannerIndex, setEditingCardBannerIndex] = useState<number | null>(null)
+  const [cardBannerLabel, setCardBannerLabel] = useState('')
+  const [cardBannerHeight, setCardBannerHeight] = useState<number>(100)
   const [categoryCards, setCategoryCards] = useState<CategoryCard[]>([])
   const [uploadingCardImage, setUploadingCardImage] = useState(false)
 
@@ -99,6 +105,9 @@ export function LayoutManager({
 
   const [showCategoryPicker, setShowCategoryPicker] = useState(false)
   const [editingFeaturedIndex, setEditingFeaturedIndex] = useState<number | null>(null)
+  const [featuredTitleModal, setFeaturedTitleModal] = useState<{ categoryId: string; categoryName: string; isEdit: boolean } | null>(null)
+  const [featuredLabel, setFeaturedLabel] = useState('')
+  const [featuredSubtitle, setFeaturedSubtitle] = useState('')
 
   const addSection = (type: LayoutSection['type']) => {
     const id = generateId()
@@ -114,10 +123,17 @@ export function LayoutManager({
         bannerIds: [],
       }
     } else if (type === 'featured') {
-      // 인기상품은 카테고리 선택 모달을 먼저 보여줌
       setShowAddMenu(false)
       setShowCategoryPicker(true)
       return
+    } else if (type === 'cardBannerGroup') {
+      newSection = {
+        id,
+        type: 'cardBannerGroup',
+        visible: true,
+        label: '카드배너',
+        cards: [],
+      }
     } else {
       newSection = { id, type, visible: true } as LayoutSection
     }
@@ -127,24 +143,45 @@ export function LayoutManager({
   }
 
   const addFeaturedWithCategory = (categoryId: string, categoryName: string) => {
-    const id = generateId()
-    const newSection: FeaturedSectionConfig = {
-      id,
-      type: 'featured',
-      visible: true,
-      categoryId,
-      label: categoryName,
-    }
-    setSections((prev) => [...prev, newSection])
     setShowCategoryPicker(false)
+    setFeaturedLabel(categoryName)
+    setFeaturedSubtitle('')
+    setFeaturedTitleModal({ categoryId, categoryName, isEdit: false })
   }
 
   const updateFeaturedCategory = (idx: number, categoryId: string, categoryName: string) => {
-    setSections((prev) =>
-      prev.map((s, i) =>
-        i === idx ? { ...s, categoryId, label: categoryName } as FeaturedSectionConfig : s
+    setEditingFeaturedIndex(null)
+    const existing = sections[idx] as FeaturedSectionConfig
+    setFeaturedLabel(existing.label || categoryName)
+    setFeaturedSubtitle(existing.subtitle || '')
+    setFeaturedTitleModal({ categoryId, categoryName, isEdit: true })
+  }
+
+  const confirmFeaturedTitle = () => {
+    if (!featuredTitleModal) return
+    const { categoryId, isEdit } = featuredTitleModal
+
+    if (isEdit && editingFeaturedIndex !== null) {
+      setSections((prev) =>
+        prev.map((s, i) =>
+          i === editingFeaturedIndex
+            ? { ...s, categoryId, label: featuredLabel, subtitle: featuredSubtitle } as FeaturedSectionConfig
+            : s
+        )
       )
-    )
+    } else {
+      const id = generateId()
+      const newSection: FeaturedSectionConfig = {
+        id,
+        type: 'featured',
+        visible: true,
+        categoryId,
+        label: featuredLabel,
+        subtitle: featuredSubtitle,
+      }
+      setSections((prev) => [...prev, newSection])
+    }
+    setFeaturedTitleModal(null)
     setEditingFeaturedIndex(null)
   }
 
@@ -262,10 +299,12 @@ export function LayoutManager({
                         {isBanner
                           ? bannerCfg!.label
                           : section.type === 'categories'
-                            ? '카테고리'
+                            ? '카드 배너'
                             : section.type === 'featured'
-                              ? ((section as FeaturedSectionConfig).label || '인기 상품')
-                              : '브랜드'}
+                              ? ((section as FeaturedSectionConfig).label || '메인상품추출')
+                              : section.type === 'cardBannerGroup'
+                                ? ((section as CardBannerGroupConfig).label || '카드배너 그룹')
+                                : '브랜드'}
                       </span>
                       {isBanner && (
                         <button
@@ -278,7 +317,10 @@ export function LayoutManager({
                       {section.type === 'categories' && (
                         <button
                           onClick={() => {
-                            setCategoryCards((section as CategoriesSectionConfig).cards ?? [])
+                            const cfg = section as CategoriesSectionConfig
+                            setCategoryCards(cfg.cards ?? [])
+                            setCategoryLabel(cfg.label ?? '')
+                            setCategorySubtitle(cfg.subtitle ?? '')
                             setEditingCategoryIndex(idx)
                           }}
                           className="rounded bg-white/20 px-1.5 py-0.5 text-[9px] text-white hover:bg-white/30"
@@ -286,13 +328,41 @@ export function LayoutManager({
                           편집
                         </button>
                       )}
-                      {section.type === 'featured' && (
+                      {section.type === 'cardBannerGroup' && (
                         <button
-                          onClick={() => setEditingFeaturedIndex(idx)}
+                          onClick={() => {
+                            const cfg = section as CardBannerGroupConfig
+                            setCategoryCards(cfg.cards ?? [])
+                            setEditingCardBannerIndex(idx)
+                            setCardBannerLabel(cfg.label || '카드배너')
+                            setCardBannerHeight(cfg.cardHeight ?? 100)
+                          }}
                           className="rounded bg-white/20 px-1.5 py-0.5 text-[9px] text-white hover:bg-white/30"
                         >
-                          카테고리 변경
+                          편집
                         </button>
+                      )}
+                      {section.type === 'featured' && (
+                        <>
+                          <button
+                            onClick={() => setEditingFeaturedIndex(idx)}
+                            className="rounded bg-white/20 px-1.5 py-0.5 text-[9px] text-white hover:bg-white/30"
+                          >
+                            카테고리 변경
+                          </button>
+                          <button
+                            onClick={() => {
+                              const cfg = section as FeaturedSectionConfig
+                              setEditingFeaturedIndex(idx)
+                              setFeaturedLabel(cfg.label || '')
+                              setFeaturedSubtitle(cfg.subtitle || '')
+                              setFeaturedTitleModal({ categoryId: cfg.categoryId || '', categoryName: cfg.label || '', isEdit: true })
+                            }}
+                            className="rounded bg-white/20 px-1.5 py-0.5 text-[9px] text-white hover:bg-white/30"
+                          >
+                            타이틀 편집
+                          </button>
+                        </>
                       )}
                       <button
                         onClick={() => toggleVisibility(idx)}
@@ -371,32 +441,22 @@ export function LayoutManager({
               배너
             </button>
             <button
-              onClick={() => addSection('categories')}
-              className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
-            >
-              <svg className="h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25h2.25A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25h-2.25a2.25 2.25 0 01-2.25-2.25v-2.25z" />
-              </svg>
-              카테고리
-            </button>
-            <button
               onClick={() => addSection('featured')}
               className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
             >
               <svg className="h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007zM8.625 10.5a.375.375 0 11-.75 0 .375.375 0 01.75 0zm7.5 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
               </svg>
-              인기 상품
+              메인상품추출
             </button>
             <button
-              onClick={() => addSection('brands')}
+              onClick={() => addSection('cardBannerGroup')}
               className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
             >
               <svg className="h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25h2.25A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25h-2.25a2.25 2.25 0 01-2.25-2.25v-2.25z" />
               </svg>
-              브랜드
+              카드배너 그룹
             </button>
           </div>
         )}
@@ -432,30 +492,20 @@ export function LayoutManager({
           <div className="mx-4 max-h-[70vh] w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="border-b border-zinc-100 px-6 py-4">
               <h3 className="text-lg font-semibold text-zinc-900">카테고리 선택</h3>
-              <p className="mt-1 text-sm text-zinc-500">인기상품에 표시할 카테고리를 선택하세요</p>
+              <p className="mt-1 text-sm text-zinc-500">메인에 상품을 추출할 카테고리를 선택하세요</p>
             </div>
             <div className="max-h-[50vh] overflow-y-auto p-4">
               <div className="space-y-0.5">
-                {allCategories.map((cat) => (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => {
-                      if (editingFeaturedIndex !== null) {
-                        updateFeaturedCategory(editingFeaturedIndex, cat.id, cat.name)
-                      } else {
-                        addFeaturedWithCategory(cat.id, cat.name)
-                      }
-                    }}
-                    className="flex w-full items-center rounded-lg px-4 py-2.5 text-left text-sm text-zinc-700 transition hover:bg-zinc-100"
-                    style={{ paddingLeft: `${(cat.level - 1) * 20 + 16}px` }}
-                  >
-                    <span className={cat.level === 1 ? 'font-bold' : cat.level === 2 ? 'font-medium' : ''}>
-                      {cat.name}
-                    </span>
-                    <span className="ml-2 text-[10px] text-zinc-400">{cat.level}차</span>
-                  </button>
-                ))}
+                <CategoryTreePicker
+                  allCategories={allCategories}
+                  onSelect={(catId, catName) => {
+                    if (editingFeaturedIndex !== null) {
+                      updateFeaturedCategory(editingFeaturedIndex, catId, catName)
+                    } else {
+                      addFeaturedWithCategory(catId, catName)
+                    }
+                  }}
+                />
               </div>
             </div>
             <div className="border-t border-zinc-100 px-6 py-3">
@@ -473,15 +523,85 @@ export function LayoutManager({
         </div>
       )}
 
+      {/* 메인상품추출 타이틀 설정 모달 */}
+      {featuredTitleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 w-full max-w-md rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-zinc-100 px-6 py-4">
+              <h3 className="text-lg font-semibold text-zinc-900">타이틀 설정</h3>
+              <p className="mt-1 text-sm text-zinc-500">메인에 표시될 제목과 부제목을 입력하세요</p>
+            </div>
+            <div className="space-y-4 p-6">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">타이틀</label>
+                <input
+                  type="text"
+                  value={featuredLabel}
+                  onChange={(e) => setFeaturedLabel(e.target.value)}
+                  placeholder="예: NEW ARRIVALS"
+                  className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">서브타이틀</label>
+                <input
+                  type="text"
+                  value={featuredSubtitle}
+                  onChange={(e) => setFeaturedSubtitle(e.target.value)}
+                  placeholder="예: 새로 입고된 상품을 만나보세요"
+                  className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 border-t border-zinc-100 px-6 py-4">
+              <button
+                onClick={() => { setFeaturedTitleModal(null); setEditingFeaturedIndex(null) }}
+                className="flex-1 rounded-lg border border-zinc-300 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
+              >
+                취소
+              </button>
+              <button
+                onClick={confirmFeaturedTitle}
+                className="flex-1 rounded-lg bg-zinc-900 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 카테고리 카드 편집 모달 */}
       {editingCategoryIndex !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="mx-4 max-h-[85vh] w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="border-b border-zinc-100 px-6 py-4">
               <h3 className="text-lg font-semibold text-zinc-900">카테고리 카드 편집</h3>
-              <p className="mt-1 text-sm text-zinc-500">이미지, 텍스트, 링크를 설정하세요</p>
+              <p className="mt-1 text-sm text-zinc-500">이름, 서브이름, 카드를 설정하세요</p>
             </div>
             <div className="max-h-[55vh] overflow-y-auto p-4 space-y-3">
+              {/* 카테고리 이름 / 서브이름 */}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">카테고리 이름</label>
+                <input
+                  type="text"
+                  value={categoryLabel}
+                  onChange={(e) => setCategoryLabel(e.target.value)}
+                  placeholder="예: CATEGORY"
+                  className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">서브 이름</label>
+                <input
+                  type="text"
+                  value={categorySubtitle}
+                  onChange={(e) => setCategorySubtitle(e.target.value)}
+                  placeholder="예: 카테고리별 상품을 만나보세요"
+                  className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                />
+              </div>
+
               {categoryCards.map((card, ci) => (
                 <div key={card.id} className="flex gap-3 rounded-lg border border-zinc-200 p-3">
                   {/* 이미지 */}
@@ -565,10 +685,138 @@ export function LayoutManager({
                 onClick={() => {
                   setSections(prev => prev.map((s, i) =>
                     i === editingCategoryIndex
-                      ? { ...s, cards: categoryCards } as CategoriesSectionConfig
+                      ? { ...s, cards: categoryCards, label: categoryLabel, subtitle: categorySubtitle } as CategoriesSectionConfig
                       : s
                   ))
                   setEditingCategoryIndex(null)
+                }}
+                className="flex-1 rounded-lg bg-zinc-900 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+              >
+                {uploadingCardImage ? '업로드 중...' : '저장'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 카드배너 그룹 편집 모달 */}
+      {editingCardBannerIndex !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 max-h-[85vh] w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-zinc-100 px-6 py-4">
+              <h3 className="text-lg font-semibold text-zinc-900">카드배너 그룹 편집</h3>
+              <p className="mt-1 text-sm text-zinc-500">그룹명, 이미지, 텍스트, 링크를 설정하세요</p>
+            </div>
+            <div className="max-h-[55vh] overflow-y-auto p-4 space-y-3">
+              {/* 그룹명 */}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">그룹명</label>
+                <input
+                  type="text"
+                  value={cardBannerLabel}
+                  onChange={(e) => setCardBannerLabel(e.target.value)}
+                  placeholder="예: 신상품, 추천 아이템"
+                  className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                />
+              </div>
+
+              {/* 카드 높이 */}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">카드 높이 (px)</label>
+                <input
+                  type="number"
+                  value={cardBannerHeight}
+                  onChange={(e) => setCardBannerHeight(parseInt(e.target.value) || 100)}
+                  min={50}
+                  max={300}
+                  className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                />
+                <p className="mt-1 text-xs text-zinc-400">PC 기준 높이입니다. 모바일은 80% 크기로 표시됩니다.</p>
+              </div>
+
+              {/* 카드 목록 */}
+              {categoryCards.map((card, ci) => (
+                <div key={card.id} className="flex gap-3 rounded-lg border border-zinc-200 p-3">
+                  <div className="flex-shrink-0">
+                    <label className="block h-20 w-20 cursor-pointer overflow-hidden rounded-lg bg-zinc-100">
+                      {card.image ? (
+                        <img src={card.image} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <span className="flex h-full items-center justify-center text-[10px] text-zinc-400">이미지</span>
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0]
+                          if (!file) return
+                          setUploadingCardImage(true)
+                          const formData = new FormData()
+                          formData.set('file', file)
+                          const res = await fetch('/api/upload', { method: 'POST', body: formData })
+                          const result = await res.json()
+                          if (result.url) {
+                            setCategoryCards(prev => prev.map((c, i) => i === ci ? { ...c, image: result.url } : c))
+                          }
+                          setUploadingCardImage(false)
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <input
+                      type="text"
+                      value={card.text}
+                      onChange={(e) => setCategoryCards(prev => prev.map((c, i) => i === ci ? { ...c, text: e.target.value } : c))}
+                      placeholder="텍스트"
+                      className="w-full rounded border border-zinc-200 px-2 py-1.5 text-sm"
+                    />
+                    <input
+                      type="text"
+                      value={card.href}
+                      onChange={(e) => setCategoryCards(prev => prev.map((c, i) => i === ci ? { ...c, href: e.target.value } : c))}
+                      placeholder="링크 (예: /category/신발)"
+                      className="w-full rounded border border-zinc-200 px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                  <button
+                    onClick={() => setCategoryCards(prev => prev.filter((_, i) => i !== ci))}
+                    className="flex-shrink-0 text-xs text-red-400 hover:text-red-600"
+                  >
+                    삭제
+                  </button>
+                </div>
+              ))}
+
+              <button
+                type="button"
+                onClick={() => setCategoryCards(prev => [...prev, {
+                  id: `card-${Date.now()}`,
+                  image: '',
+                  text: '',
+                  href: '/',
+                }])}
+                className="w-full rounded-lg border-2 border-dashed border-zinc-300 py-3 text-sm text-zinc-500 hover:border-zinc-400"
+              >
+                + 카드 추가
+              </button>
+            </div>
+            <div className="flex gap-3 border-t border-zinc-100 px-6 py-4">
+              <button
+                onClick={() => setEditingCardBannerIndex(null)}
+                className="flex-1 rounded-lg border border-zinc-300 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
+              >
+                취소
+              </button>
+              <button
+                disabled={uploadingCardImage}
+                onClick={() => {
+                  setSections(prev => prev.map((s, i) =>
+                    i === editingCardBannerIndex
+                      ? { ...s, label: cardBannerLabel, cards: categoryCards, cardHeight: cardBannerHeight } as CardBannerGroupConfig
+                      : s
+                  ))
+                  setEditingCardBannerIndex(null)
                 }}
                 className="flex-1 rounded-lg bg-zinc-900 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
               >
@@ -606,6 +854,8 @@ function SectionPreview({
       )
     case 'categories':
       return <CategoriesPreview />
+    case 'cardBannerGroup':
+      return <CardBannerGroupPreview label={(section as CardBannerGroupConfig).label} cards={(section as CardBannerGroupConfig).cards} />
     case 'featured':
       return <FeaturedPreview label={(section as FeaturedSectionConfig).label} />
     case 'brands':
@@ -704,7 +954,7 @@ function CategoriesPreview() {
   return (
     <div className="px-8 py-8">
       <p className="mb-4 text-center text-sm font-bold text-zinc-700">
-        카테고리
+        카드 배너
       </p>
       <div className="grid grid-cols-6 gap-3">
         {cats.map((c) => (
@@ -726,7 +976,7 @@ function FeaturedPreview({ label }: { label?: string }) {
   return (
     <div className="bg-zinc-50 px-8 py-8">
       <p className="mb-4 text-center text-sm font-bold text-zinc-700">
-        {label || '인기 상품'}
+        {label || '메인상품추출'}
       </p>
       <div className="grid grid-cols-4 gap-3">
         {Array.from({ length: 4 }).map((_, i) => (
@@ -740,6 +990,35 @@ function FeaturedPreview({ label }: { label?: string }) {
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+function CardBannerGroupPreview({ label, cards }: { label: string; cards: CategoryCard[] }) {
+  return (
+    <div className="px-8 py-8">
+      <p className="mb-4 text-center text-sm font-bold text-zinc-700">{label || '카드배너'}</p>
+      <div className="grid grid-cols-4 gap-3">
+        {cards.length > 0 ? cards.slice(0, 4).map((card) => (
+          <div key={card.id} className="relative flex h-14 items-center justify-center overflow-hidden rounded-lg bg-zinc-100">
+            {card.image ? (
+              <>
+                <img src={card.image} alt={card.text} className="absolute inset-0 h-full w-full object-cover" />
+                <div className="absolute inset-0 bg-black/30" />
+                <span className="relative text-[10px] font-medium text-white">{card.text}</span>
+              </>
+            ) : (
+              <span className="text-[10px] font-medium text-zinc-500">{card.text || '카드'}</span>
+            )}
+          </div>
+        )) : (
+          Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="flex h-14 items-center justify-center rounded-lg bg-zinc-100">
+              <span className="text-[10px] text-zinc-400">카드 {i + 1}</span>
+            </div>
+          ))
+        )}
       </div>
     </div>
   )
@@ -762,4 +1041,68 @@ function BrandsPreview() {
       </div>
     </div>
   )
+}
+
+/* ── 카테고리 트리 피커 (접기/펼치기) ── */
+
+function CategoryTreePicker({
+  allCategories,
+  onSelect,
+}: {
+  allCategories: CategoryOption[]
+  onSelect: (catId: string, catName: string) => void
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
+  const toggle = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const getChildren = (parentId: string) => allCategories.filter((c) => c.parent_id === parentId)
+  const level1 = allCategories.filter((c) => c.level === 1)
+
+  const renderCat = (cat: CategoryOption, depth: number) => {
+    const children = getChildren(cat.id)
+    const hasChildren = children.length > 0
+    const isExpanded = expanded.has(cat.id)
+
+    return (
+      <div key={cat.id}>
+        <div className="flex items-center">
+          {hasChildren ? (
+            <button
+              type="button"
+              onClick={() => toggle(cat.id)}
+              className="flex-shrink-0 p-1 text-zinc-400 hover:text-zinc-600"
+              style={{ marginLeft: `${depth * 20}px` }}
+            >
+              <svg className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          ) : (
+            <span style={{ marginLeft: `${depth * 20 + 24}px` }} />
+          )}
+          <button
+            type="button"
+            onClick={() => onSelect(cat.id, cat.name)}
+            className="flex flex-1 items-center rounded-lg px-2 py-2 text-left text-sm text-zinc-700 transition hover:bg-zinc-100"
+          >
+            <span className={depth === 0 ? 'font-bold' : depth === 1 ? 'font-medium' : ''}>
+              {cat.name}
+            </span>
+            <span className="ml-2 text-[10px] text-zinc-400">{cat.level}차</span>
+          </button>
+        </div>
+        {hasChildren && isExpanded && children.map((child) => renderCat(child, depth + 1))}
+      </div>
+    )
+  }
+
+  return <>{level1.map((cat) => renderCat(cat, 0))}</>
 }

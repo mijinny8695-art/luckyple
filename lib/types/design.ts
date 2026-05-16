@@ -27,7 +27,7 @@ export type NavItem = {
 
 // ── 레이아웃 섹션 타입 ──
 
-export type LayoutSectionType = 'banner' | 'categories' | 'featured' | 'brands'
+export type LayoutSectionType = 'banner' | 'categories' | 'featured' | 'brands' | 'cardBannerGroup'
 
 export type LayoutSectionBase = {
   id: string
@@ -52,16 +52,26 @@ export type CategoryCard = {
 export type CategoriesSectionConfig = LayoutSectionBase & {
   type: 'categories'
   cards?: CategoryCard[]
+  label?: string
+  subtitle?: string
 }
 
 export type FeaturedSectionConfig = LayoutSectionBase & {
   type: 'featured'
   categoryId?: string
   label?: string
+  subtitle?: string
 }
 
 export type BrandsSectionConfig = LayoutSectionBase & {
   type: 'brands'
+}
+
+export type CardBannerGroupConfig = LayoutSectionBase & {
+  type: 'cardBannerGroup'
+  label: string
+  cards: CategoryCard[]
+  cardHeight?: number
 }
 
 export type LayoutSection =
@@ -69,6 +79,7 @@ export type LayoutSection =
   | CategoriesSectionConfig
   | FeaturedSectionConfig
   | BrandsSectionConfig
+  | CardBannerGroupConfig
 
 export type SiteDesign = {
   id: string
@@ -100,5 +111,7 @@ export type SiteDesign = {
   category_banner_title: string | null
   category_banner_url: string | null
   category_banner_video_url: string | null
+  product_detail_top_html: string | null
+  product_detail_bottom_html: string | null
   created_at: string
 }

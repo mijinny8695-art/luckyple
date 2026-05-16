@@ -159,6 +159,29 @@ export async function upsertDesign(siteId: string, formData: FormData) {
   return { success: true }
 }
 
+// ── 상품상세 고정 콘텐츠 ──
+
+export async function saveProductDetailFixed(siteId: string, topHtml: string, bottomHtml: string) {
+  const supabase = await createClient()
+
+  const { error } = await supabase.from('site_design').upsert(
+    {
+      site_id: siteId,
+      product_detail_top_html: topHtml || null,
+      product_detail_bottom_html: bottomHtml || null,
+    },
+    { onConflict: 'site_id' }
+  )
+
+  if (error) {
+    return { error: '저장 중 오류가 발생했습니다.' }
+  }
+
+  revalidatePath('/admin/design')
+  revalidatePath('/product/[id]', 'page')
+  return { success: true }
+}
+
 // ── 레이아웃 관리 ──
 
 export async function saveLayout(siteId: string, layout: LayoutSection[]) {

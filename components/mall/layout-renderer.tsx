@@ -1,8 +1,9 @@
-import type { LayoutSection, Banner, SiteDesign, BannerSectionConfig, FeaturedSectionConfig, CategoriesSectionConfig } from '@/lib/types/design'
+import type { LayoutSection, Banner, SiteDesign, BannerSectionConfig, FeaturedSectionConfig, CategoriesSectionConfig, CardBannerGroupConfig } from '@/lib/types/design'
 import { HeroBannerCarousel } from './hero-banner-carousel'
 import { HeroDefault } from './hero-default'
 import { BannerSection } from './banner-section'
 import { CategoriesSection } from './categories-section'
+import { CardBannerSection } from './card-banner-section'
 import { FeaturedSection } from './featured-section'
 import { BrandsSection } from './brands-section'
 
@@ -69,6 +70,8 @@ export function LayoutRenderer({
               <CategoriesSection
                 key={section.id}
                 cards={catCfg.cards}
+                label={catCfg.label}
+                subtitle={catCfg.subtitle}
               />
             )
           }
@@ -80,7 +83,19 @@ export function LayoutRenderer({
               <FeaturedSection
                 key={section.id}
                 categoryId={cfg.categoryId}
-                label={cfg.label || '인기 상품'}
+                label={cfg.label || '메인상품추출'}
+                subtitle={cfg.subtitle}
+              />
+            )
+          }
+
+          case 'cardBannerGroup': {
+            const cbCfg = section as CardBannerGroupConfig
+            return (
+              <CardBannerSection
+                key={section.id}
+                cards={cbCfg.cards}
+                cardHeight={cbCfg.cardHeight}
               />
             )
           }

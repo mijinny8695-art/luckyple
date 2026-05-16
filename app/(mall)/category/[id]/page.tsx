@@ -172,24 +172,38 @@ export default async function CategoryPage({
       {/* 2차 카테고리 이미지 썸네일 */}
       {subCategories && subCategories.length > 0 && (
         <div className="bg-white py-6">
-          <div className="mx-auto max-w-7xl px-4">
-            <div className="grid grid-cols-4 gap-3 md:flex md:flex-wrap md:justify-center md:gap-4">
+          <div className="mx-auto max-w-5xl px-4">
+            <div className="grid grid-cols-4 gap-3 sm:grid-cols-6 sm:gap-5">
               {subCategories.map((sub) => {
                 const isActive = sub.id === category.id || (category.level === 3 && category.parent_id === sub.id)
+                const hasImage = !!sub.image_url
+
+                if (!hasImage) {
+                  return (
+                    <Link
+                      key={sub.id}
+                      href={`/category/${sub.slug || sub.id}`}
+                      className={`flex items-center justify-center rounded-lg border px-3 py-3 text-center text-[13px] transition ${
+                        isActive
+                          ? 'border-zinc-900 bg-zinc-900 font-bold text-white'
+                          : 'border-zinc-300 bg-white text-zinc-700 hover:border-zinc-900 hover:bg-zinc-50'
+                      }`}
+                    >
+                      {sub.name}
+                    </Link>
+                  )
+                }
+
                 return (
                   <Link
                     key={sub.id}
                     href={`/category/${sub.slug || sub.id}`}
-                    className={`flex flex-col items-center gap-2 md:w-[100px] ${isActive ? 'opacity-100' : 'opacity-70 hover:opacity-100'}`}
+                    className={`flex flex-col items-center gap-2 ${isActive ? 'opacity-100' : 'opacity-70 hover:opacity-100'}`}
                   >
                     <div className="aspect-square w-full overflow-hidden rounded-lg bg-zinc-100">
-                      {sub.image_url ? (
-                        <img src={sub.image_url} alt={sub.name} className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-xs text-zinc-400">{sub.name.slice(0, 2)}</div>
-                      )}
+                      <img src={sub.image_url} alt={sub.name} className="h-full w-full object-cover" />
                     </div>
-                    <span className={`text-xs text-center ${isActive ? 'font-bold text-zinc-900' : 'text-zinc-600'}`}>
+                    <span className={`text-[13px] text-center leading-tight ${isActive ? 'font-bold text-zinc-900' : 'text-zinc-600'}`}>
                       {sub.name}
                     </span>
                   </Link>

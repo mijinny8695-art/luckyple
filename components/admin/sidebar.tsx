@@ -12,6 +12,7 @@ const navItems = [
   { href: '/admin/products', label: '상품 관리' },
   { href: '/admin/members', label: '회원 관리' },
   { href: '/admin/boards', label: '게시판 관리' },
+  { href: '/admin/popups', label: '레이어 팝업' },
   { href: '/admin/seo', label: 'SEO 설정' },
   { href: '/admin/settings', label: '설정' },
 ]

@@ -79,7 +79,7 @@ export function CategoryManager({ initialCategories }: { initialCategories: Cate
       </div>
 
       {/* 우측: 폼 */}
-      <div className="lg:col-span-2">
+      <div className="lg:col-span-2 lg:sticky lg:top-6 lg:self-start">
         {formState.mode === 'idle' ? (
           <div className="rounded-xl bg-white p-6 shadow-sm">
             <p className="text-center text-sm text-zinc-400">

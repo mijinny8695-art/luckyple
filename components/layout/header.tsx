@@ -5,6 +5,7 @@ import { NavDropdown } from './nav-dropdown'
 import { MobileMenu } from './mobile-menu'
 import type { NavItem } from '@/lib/types/design'
 import { getCachedCategories } from '@/lib/site'
+import { HeaderSearch } from './header-search'
 
 export async function Header({
   siteName,
@@ -36,7 +37,7 @@ export async function Header({
 
   return (
     <header className="sticky top-0 z-50 border-b border-zinc-900 bg-white/80 backdrop-blur-md">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 pt-5 pb-2">
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 pt-2 pb-2 md:pt-5">
         <div className="w-50">
           <MobileMenu
             user={user}
@@ -46,15 +47,16 @@ export async function Header({
           />
         </div>
 
-        <Link href="/" className="flex items-center">
+        <Link href="/" className="flex items-center py-1 md:py-6">
           {logoUrl ? (
             <img src={logoUrl} alt={siteName} className="h-12 w-auto max-w-[220px] object-contain" />
           ) : (
-            <span className="text-2xl font-bold tracking-widest text-zinc-900">{siteName}</span>
+            <span className="text-3xl md:text-4xl tracking-widest text-zinc-900" style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic' }}>{siteName}</span>
           )}
         </Link>
 
-        <div className="hidden w-50 items-center justify-end gap-4 md:flex">
+        <div className="hidden items-center justify-end gap-4 md:flex">
+          <HeaderSearch />
           <HeaderAuth user={user} isAdmin={isAdmin} />
         </div>
         <div className="flex w-50 items-center justify-end md:hidden">
