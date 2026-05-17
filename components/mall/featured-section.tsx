@@ -56,7 +56,7 @@ export async function FeaturedSection({
   if (!products || products.length === 0) return null
 
   return (
-    <section className="py-12">
+    <section className="pt-4 pb-12">
       <div className="mx-auto max-w-7xl px-4">
         <div className="mb-6">
           <h2 className="w-full text-[17px] font-bold text-zinc-900">{label}</h2>

@@ -11,7 +11,7 @@ export function CardBannerSection({
   if (!cards || cards.length === 0) return null
 
   return (
-    <section className="mx-auto max-w-7xl px-4 mt-4">
+    <section className="mx-auto max-w-7xl px-4 my-10">
       <div className="grid grid-cols-2 gap-3 sm:flex sm:gap-5">
         {cards.map((card) => (
           <Link
