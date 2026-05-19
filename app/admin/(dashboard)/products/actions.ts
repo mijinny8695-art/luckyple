@@ -137,11 +137,31 @@ export async function getAllCategoriesFlat() {
   const supabase = await createClient()
   const { data } = await supabase
     .from('categories')
-    .select('id, name, category_no, parent_id, level')
-    .order('level')
+    .select('id, name, category_no, parent_id, level, sort_order')
     .order('sort_order')
 
-  return data ?? []
+  const rows = data ?? []
+
+  // 부모별 자식 그룹핑 (sort_order 순서 유지)
+  const childrenMap = new Map<string | null, typeof rows>()
+  for (const cat of rows) {
+    const key = cat.parent_id ?? null
+    if (!childrenMap.has(key)) childrenMap.set(key, [])
+    childrenMap.get(key)!.push(cat)
+  }
+
+  // 깊이 우선으로 평탄화: 부모 → 자식들 → 다음 부모
+  const result: typeof rows = []
+  function walk(parentId: string | null) {
+    const children = childrenMap.get(parentId) ?? []
+    for (const cat of children) {
+      result.push(cat)
+      walk(cat.id)
+    }
+  }
+  walk(null)
+
+  return result
 }
 
 export async function uploadImage(formData: FormData) {
