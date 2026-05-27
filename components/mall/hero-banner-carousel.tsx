@@ -5,7 +5,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import type { Banner } from '@/lib/types/design'
 
-export function HeroBannerCarousel({ banners }: { banners: Banner[] }) {
+export function HeroBannerCarousel({ banners, autoSeconds }: { banners: Banner[]; autoSeconds?: number }) {
   const [current, setCurrent] = useState(0)
   const [paused, setPaused] = useState(false)
 
@@ -15,9 +15,12 @@ export function HeroBannerCarousel({ banners }: { banners: Banner[] }) {
 
   useEffect(() => {
     if (banners.length <= 1 || paused) return
-    const timer = setInterval(next, 5000)
+    // 미설정(undefined)이면 5초, 0이면 자동 넘김 끔
+    const ms = autoSeconds === undefined ? 5000 : autoSeconds * 1000
+    if (ms <= 0) return
+    const timer = setInterval(next, ms)
     return () => clearInterval(timer)
-  }, [banners.length, paused, next])
+  }, [banners.length, paused, next, autoSeconds])
 
   if (banners.length === 0) return null
 

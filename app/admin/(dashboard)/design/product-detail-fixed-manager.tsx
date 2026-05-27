@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SiteDesign } from '@/lib/types/design'
-import { RichEditor } from './rich-editor'
+import { TiptapEditor } from '@/components/admin/tiptap-editor'
 import { saveProductDetailFixed } from './actions'
 
 export function ProductDetailFixedManager({
@@ -52,7 +52,7 @@ export function ProductDetailFixedManager({
         <p className="mb-4 text-sm text-zinc-500">
           모든 상품 상세페이지의 상품 정보 위에 표시됩니다.
         </p>
-        <RichEditor content={topHtml} onChange={setTopHtml} minHeight="200px" />
+        <TiptapEditor content={topHtml} onChange={setTopHtml} minHeight="200px" />
       </div>
 
       {/* 하단 고정 */}
@@ -61,7 +61,7 @@ export function ProductDetailFixedManager({
         <p className="mb-4 text-sm text-zinc-500">
           모든 상품 상세페이지의 상품 정보 아래에 표시됩니다.
         </p>
-        <RichEditor content={bottomHtml} onChange={setBottomHtml} minHeight="200px" />
+        <TiptapEditor content={bottomHtml} onChange={setBottomHtml} minHeight="200px" />
       </div>
 
       {/* 저장 */}

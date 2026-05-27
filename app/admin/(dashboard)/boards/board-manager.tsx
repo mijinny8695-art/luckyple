@@ -20,6 +20,69 @@ export function BoardManager({
   const [catList, setCatList] = useState<string[]>([])
   const [newCat, setNewCat] = useState('')
 
+  // 상단 배너
+  const [bannerImageUrl, setBannerImageUrl] = useState('')
+  const [bannerUploading, setBannerUploading] = useState(false)
+  const [bannerVideoUrl, setBannerVideoUrl] = useState<string | null>(null)
+  const [bannerVideoName, setBannerVideoName] = useState<string | null>(null)
+  const [videoUploading, setVideoUploading] = useState(false)
+  const [videoProgress, setVideoProgress] = useState(0)
+
+  function resetBanner() {
+    setBannerImageUrl('')
+    setBannerVideoUrl(null)
+    setBannerVideoName(null)
+  }
+
+  async function handleBannerImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setBannerUploading(true)
+    const fd = new FormData()
+    fd.set('file', file)
+    const res = await fetch('/api/upload', { method: 'POST', body: fd })
+    const result = await res.json()
+    if (result.url) setBannerImageUrl(result.url)
+    else setError(result.error ?? '배너 이미지 업로드 실패')
+    setBannerUploading(false)
+  }
+
+  async function handleBannerVideoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setVideoUploading(true)
+    setVideoProgress(0)
+    setBannerVideoName(file.name)
+    try {
+      const res = await fetch('/api/upload-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName: file.name, contentType: file.type }),
+      })
+      const { signedUrl, publicUrl, error: urlError } = await res.json()
+      if (urlError) throw new Error(urlError)
+      const xhr = new XMLHttpRequest()
+      await new Promise<void>((resolve, reject) => {
+        xhr.upload.onprogress = (ev) => {
+          if (ev.lengthComputable) setVideoProgress(Math.round((ev.loaded / ev.total) * 100))
+        }
+        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error('업로드 실패')))
+        xhr.onerror = () => reject(new Error('업로드 실패'))
+        xhr.open('PUT', signedUrl)
+        xhr.setRequestHeader('Content-Type', file.type || 'video/mp4')
+        xhr.send(file)
+      })
+      setBannerVideoUrl(publicUrl)
+    } catch (err) {
+      setBannerVideoName(null)
+      setBannerVideoUrl(null)
+      alert(err instanceof Error ? err.message : '영상 업로드 실패')
+    } finally {
+      setVideoUploading(false)
+      setVideoProgress(0)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setLoading(true)
@@ -27,6 +90,8 @@ export function BoardManager({
 
     const formData = new FormData(e.currentTarget)
     formData.set('board_categories', JSON.stringify(catList))
+    formData.set('banner_url', bannerImageUrl)
+    formData.set('banner_video_url', bannerVideoUrl ?? '')
 
     const result = editingBoard
       ? await updateBoard(editingBoard.id, formData)
@@ -45,6 +110,9 @@ export function BoardManager({
   function handleEdit(board: Board) {
     setEditingBoard(board)
     setCatList(board.board_categories ?? [])
+    setBannerImageUrl(board.banner_url ?? '')
+    setBannerVideoUrl(board.banner_video_url ?? null)
+    setBannerVideoName(board.banner_video_url ? board.banner_video_url.split('/').pop() ?? '등록됨' : null)
     setShowForm(true)
     setError(null)
   }
@@ -54,6 +122,7 @@ export function BoardManager({
     setEditingBoard(null)
     setCatList([])
     setNewCat('')
+    resetBanner()
     setError(null)
   }
 
@@ -68,7 +137,7 @@ export function BoardManager({
         <div className="flex items-center justify-between border-b border-zinc-100 px-6 py-4">
           <h3 className="font-semibold text-zinc-900">게시판 목록</h3>
           <button
-            onClick={() => { setShowForm(true); setEditingBoard(null); setError(null) }}
+            onClick={() => { setShowForm(true); setEditingBoard(null); setCatList([]); resetBanner(); setError(null) }}
             className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800"
           >
             게시판 추가
@@ -229,6 +298,59 @@ export function BoardManager({
               </div>
               <p className="mt-1 text-xs text-zinc-400">글 작성 시 카테고리를 선택할 수 있습니다.</p>
             </div>
+
+            {/* 상단 배너 */}
+            <div className="rounded-lg border border-zinc-200 p-4">
+              <p className="text-sm font-medium text-zinc-900">상단 배너</p>
+              <p className="mb-3 text-xs text-zinc-400">게시판 페이지 상단에 표시됩니다. 영상이 있으면 영상이 우선됩니다.</p>
+
+              {/* 배너 이미지 */}
+              <div className="mb-4">
+                <label className="mb-1 block text-xs font-medium text-zinc-600">배너 이미지</label>
+                <div className="flex items-start gap-3">
+                  {bannerImageUrl ? (
+                    <div className="relative">
+                      <img src={bannerImageUrl} alt="배너" className="h-20 w-auto max-w-[280px] rounded-lg border border-zinc-200 object-cover" />
+                      <button type="button" onClick={() => setBannerImageUrl('')} className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs text-white hover:bg-red-600">&times;</button>
+                    </div>
+                  ) : (
+                    <div className="flex h-20 w-[280px] items-center justify-center rounded-lg border-2 border-dashed border-zinc-300 text-xs text-zinc-400">이미지 없음</div>
+                  )}
+                  <label className="cursor-pointer rounded-lg bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-200">
+                    {bannerUploading ? '업로드 중...' : bannerImageUrl ? '이미지 변경' : '이미지 업로드'}
+                    <input type="file" accept="image/*" className="hidden" onChange={handleBannerImageUpload} />
+                  </label>
+                </div>
+              </div>
+
+              {/* 배너 영상 */}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-600">배너 영상 (선택)</label>
+                <div className="flex items-center gap-3">
+                  {bannerVideoName ? (
+                    <div className="flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2">
+                      <span className="max-w-[160px] truncate text-xs text-zinc-700">{bannerVideoName}</span>
+                      {!videoUploading && (
+                        <button type="button" onClick={() => { setBannerVideoName(null); setBannerVideoUrl(null) }} className="text-red-500 hover:text-red-600">&times;</button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex h-9 w-[160px] items-center justify-center rounded-lg border-2 border-dashed border-zinc-300 text-xs text-zinc-400">영상 없음</div>
+                  )}
+                  <label className={`cursor-pointer rounded-lg bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-200 ${videoUploading ? 'pointer-events-none opacity-50' : ''}`}>
+                    {videoUploading ? `업로드 중... ${videoProgress}%` : bannerVideoName ? '영상 변경' : '영상 업로드'}
+                    <input type="file" accept="video/*" className="hidden" onChange={handleBannerVideoChange} disabled={videoUploading} />
+                  </label>
+                </div>
+                {videoUploading && (
+                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200">
+                    <div className="h-full bg-zinc-900 transition-all" style={{ width: `${videoProgress}%` }} />
+                  </div>
+                )}
+                <p className="mt-1 text-[11px] text-zinc-400">영상 등록 시 이미지 대신 자동재생됩니다. (MP4 권장)</p>
+              </div>
+            </div>
+
             {editingBoard && (
               <div className="flex items-center gap-2">
                 <input name="is_active" type="hidden" value={editingBoard.is_active ? 'true' : 'false'} />

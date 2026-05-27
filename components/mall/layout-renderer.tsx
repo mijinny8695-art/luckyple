@@ -56,6 +56,7 @@ export function LayoutRenderer({
                 <HeroBannerCarousel
                   key={section.id}
                   banners={sectionBanners}
+                  autoSeconds={cfg.autoSeconds}
                 />
               )
             }
@@ -85,6 +86,11 @@ export function LayoutRenderer({
                 categoryId={cfg.categoryId}
                 label={cfg.label || '메인상품추출'}
                 subtitle={cfg.subtitle}
+                moreAction={cfg.moreAction || 'link'}
+                display={cfg.display || 'grid'}
+                perRow={cfg.perRow || 4}
+                rows={cfg.rows || 2}
+                autoSeconds={cfg.autoSeconds || 0}
               />
             )
           }

@@ -44,8 +44,10 @@ export async function generateMetadata({
 
 export default async function ProductPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }) {
   const { id: rawId } = await params
   const id = decodeURIComponent(rawId)
@@ -66,14 +68,27 @@ export default async function ProductPage({
     .select('category_id')
     .eq('product_id', product.id)
 
-  let categories: { id: string; name: string; slug: string | null }[] = []
-  if (relations && relations.length > 0) {
-    const catIds = relations.map((r) => r.category_id)
-    const { data } = await supabase
-      .from('categories')
-      .select('id, name, slug')
-      .in('id', catIds)
-    categories = data ?? []
+  // 브레드크럼: 사용자가 타고 들어온 카테고리(?cat=) 경로 우선, 없으면 상품의 가장 깊은 카테고리로 폴백
+  const sp = await searchParams
+  const fromCatId = typeof sp.cat === 'string' ? sp.cat : undefined
+  const breadcrumb: { id: string; name: string; slug: string | null }[] = []
+  const { data: allCats } = await supabase
+    .from('categories')
+    .select('id, name, slug, parent_id, level')
+  if (allCats) {
+    const byId = new Map(allCats.map((c) => [c.id, c]))
+    let cur = fromCatId ? byId.get(fromCatId) : undefined
+    if (!cur && relations && relations.length > 0) {
+      const catIds = relations.map((r) => r.category_id)
+      const productCats = allCats.filter((c) => catIds.includes(c.id))
+      cur = productCats.sort((a, b) => (b.level ?? 0) - (a.level ?? 0))[0]
+    }
+    const guard = new Set<string>()
+    while (cur && !guard.has(cur.id)) {
+      guard.add(cur.id)
+      breadcrumb.unshift({ id: cur.id, name: cur.name, slug: cur.slug })
+      cur = cur.parent_id ? byId.get(cur.parent_id) : undefined
+    }
   }
 
   const allImages = [
@@ -87,7 +102,31 @@ export default async function ProductPage({
 
   return (
     <div>
-      <div className="mx-auto max-w-7xl px-4 py-12">
+      {/* 상단 카테고리 경로 (브레드크럼) */}
+      {breadcrumb.length > 0 && (
+        <nav className="bg-white">
+          <div className="mx-auto max-w-7xl px-4 pt-4 pb-1">
+            <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-zinc-500">
+              <li>
+                <Link href="/" className="hover:text-zinc-900">Home</Link>
+              </li>
+              {breadcrumb.map((c, i) => (
+                <li key={c.id} className="flex items-center gap-x-1.5">
+                  <span className="text-zinc-300">›</span>
+                  <Link
+                    href={`/category/${c.slug || c.id}`}
+                    className={i === breadcrumb.length - 1 ? 'font-medium text-zinc-900' : 'hover:text-zinc-900'}
+                  >
+                    {c.name}
+                  </Link>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </nav>
+      )}
+
+      <div className="mx-auto max-w-7xl px-4 pt-2 pb-12">
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-2">
         {/* 이미지 갤러리 */}
         <div>
@@ -96,20 +135,6 @@ export default async function ProductPage({
 
         {/* 상품 정보 */}
         <div>
-          {categories.length > 0 && (
-            <div className="mb-3 flex flex-wrap gap-1.5">
-              {categories.map((cat) => (
-                <Link
-                  key={cat.id}
-                  href={`/category/${cat.slug || cat.id}`}
-                  className="rounded-full bg-zinc-100 px-3 py-1 text-xs text-zinc-500 hover:bg-zinc-200"
-                >
-                  {cat.name}
-                </Link>
-              ))}
-            </div>
-          )}
-
           <h1 className="text-2xl font-bold text-zinc-900">{product.name}</h1>
 
           <p className="mt-4 text-3xl font-bold text-zinc-900">

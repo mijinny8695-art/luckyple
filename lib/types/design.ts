@@ -40,6 +40,7 @@ export type BannerSectionConfig = LayoutSectionBase & {
   label: string
   display: 'carousel' | 'grid'
   bannerIds: string[]
+  autoSeconds?: number // 캐러셀 자동 넘김 간격(초). 미설정 시 5초, 0 = 끔
 }
 
 export type CategoryCard = {
@@ -61,6 +62,13 @@ export type FeaturedSectionConfig = LayoutSectionBase & {
   categoryId?: string
   label?: string
   subtitle?: string
+  // 더보기 버튼 동작: 'link' = 카테고리 페이지로 이동(기본), 'expand' = 인라인으로 더 보여주기
+  moreAction?: 'link' | 'expand'
+  // 표시 형태: 'grid' = 단일 그리드(기본), 'slider' = 가로 슬라이드
+  display?: 'grid' | 'slider'
+  perRow?: number // 한 줄에 보여줄 상품 수 (데스크탑)
+  rows?: number // 줄 수
+  autoSeconds?: number // 슬라이드 자동 넘김 간격(초). 0 = 끔
 }
 
 export type BrandsSectionConfig = LayoutSectionBase & {
@@ -94,6 +102,7 @@ export type SiteDesign = {
   footer_phone: string | null
   footer_hours: string | null
   footer_lunch: string | null
+  kakao_link: string | null
   show_categories_section: boolean
   show_featured_section: boolean
   show_brands_section: boolean
@@ -108,9 +117,6 @@ export type SiteDesign = {
   seo_favicon: string | null
   seo_google_verification: string | null
   seo_naver_verification: string | null
-  category_banner_title: string | null
-  category_banner_url: string | null
-  category_banner_video_url: string | null
   product_detail_top_html: string | null
   product_detail_bottom_html: string | null
   created_at: string

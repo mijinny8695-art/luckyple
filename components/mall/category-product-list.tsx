@@ -16,11 +16,14 @@ export function CategoryProductList({
   initialProducts,
   categoryNos,
   total,
+  fromCategoryId,
 }: {
   initialProducts: Product[]
   categoryNos: string[]
   total: number
+  fromCategoryId?: string
 }) {
+  const catParam = fromCategoryId ? `?cat=${fromCategoryId}` : ''
   const pathname = usePathname()
   const storageKey = `cat-products-${pathname}`
 
@@ -90,7 +93,7 @@ export function CategoryProductList({
         {products.map((product) => (
           <Link
             key={product.id}
-            href={`/product/${product.slug || product.id}`}
+            href={`/product/${product.slug || product.id}${catParam}`}
             onClick={handleClick}
             className="group"
           >

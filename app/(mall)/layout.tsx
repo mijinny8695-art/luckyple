@@ -2,6 +2,7 @@ import { Header } from '@/components/layout/header'
 import { Footer } from '@/components/layout/footer'
 import { PageTracker } from '@/components/layout/page-tracker'
 import { LayerPopup } from '@/components/mall/layer-popup'
+import { FloatingButtons } from '@/components/mall/floating-buttons'
 import { getSiteConfigFull } from '@/lib/site'
 import { createClient } from '@/lib/supabase/server'
 import { trackPageView } from '@/lib/track'
@@ -33,6 +34,7 @@ export default async function MallLayout({
       <Header siteName={site.name} navItems={site.design?.nav_items} logoUrl={site.design?.logo_url} />
       <PageTracker siteId={site.id} />
       {popups && popups.length > 0 && <LayerPopup popups={popups} />}
+      <FloatingButtons kakaoLink={site.design?.kakao_link} />
       <main>{children}</main>
       <Footer
         siteName={site.name}

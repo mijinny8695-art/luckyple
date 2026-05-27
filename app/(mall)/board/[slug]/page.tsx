@@ -65,6 +65,7 @@ export default async function BoardPage({
     .select('id, title, content, author_name, thumbnail_url, view_count, is_notice, created_at')
     .eq('board_id', board.id)
     .eq('is_notice', true)
+    .eq('is_published', true)
     .order('created_at', { ascending: false })
 
   const from = (page - 1) * size
@@ -73,6 +74,7 @@ export default async function BoardPage({
     .select('id, title, content, author_name, thumbnail_url, view_count, is_notice, category, created_at', { count: 'exact' })
     .eq('board_id', board.id)
     .eq('is_notice', false)
+    .eq('is_published', true)
   if (filterCat) {
     postsQuery = postsQuery.eq('category', filterCat)
   }
@@ -84,7 +86,21 @@ export default async function BoardPage({
   const allPosts = [...(notices ?? []), ...(posts ?? [])] as Post[]
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-12">
+    <>
+      {/* 상단 배너 (영상 우선) */}
+      {(board.banner_video_url || board.banner_url) && (
+        <div className="relative mx-auto max-w-[1920px]">
+          <div className="h-[160px] overflow-hidden md:h-[320px]">
+            {board.banner_video_url ? (
+              <video src={board.banner_video_url} autoPlay muted loop playsInline className="h-full w-full object-cover" />
+            ) : (
+              <img src={board.banner_url} alt={board.name} className="h-full w-full object-cover" />
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="mx-auto max-w-4xl px-4 py-12">
       <h1 className="mb-2 text-2xl font-bold text-zinc-900">{board.name}</h1>
       {board.description && (
         <p className="mb-6 text-sm text-zinc-500">{board.description}</p>
@@ -222,6 +238,7 @@ export default async function BoardPage({
           ))}
         </div>
       )}
-    </div>
+      </div>
+    </>
   )
 }

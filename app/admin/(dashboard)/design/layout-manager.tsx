@@ -13,6 +13,7 @@ import type {
 } from '@/lib/types/design'
 import { saveLayout } from './actions'
 import { BannerPickerModal } from './banner-picker-modal'
+import { InlineEditor } from '@/components/admin/inline-editor'
 
 function generateId() {
   return `section-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -108,6 +109,12 @@ export function LayoutManager({
   const [featuredTitleModal, setFeaturedTitleModal] = useState<{ categoryId: string; categoryName: string; isEdit: boolean } | null>(null)
   const [featuredLabel, setFeaturedLabel] = useState('')
   const [featuredSubtitle, setFeaturedSubtitle] = useState('')
+  const [featuredMoreAction, setFeaturedMoreAction] = useState<'link' | 'expand'>('link')
+  const [featuredDisplay, setFeaturedDisplay] = useState<'grid' | 'slider'>('grid')
+  const [featuredPerRow, setFeaturedPerRow] = useState(4)
+  const [featuredRows, setFeaturedRows] = useState(2)
+  const [featuredAutoSeconds, setFeaturedAutoSeconds] = useState(0)
+  const [showCatPickerInModal, setShowCatPickerInModal] = useState(false)
 
   const addSection = (type: LayoutSection['type']) => {
     const id = generateId()
@@ -146,15 +153,12 @@ export function LayoutManager({
     setShowCategoryPicker(false)
     setFeaturedLabel(categoryName)
     setFeaturedSubtitle('')
+    setFeaturedMoreAction('link')
+    setFeaturedDisplay('grid')
+    setFeaturedPerRow(4)
+    setFeaturedRows(2)
+    setFeaturedAutoSeconds(0)
     setFeaturedTitleModal({ categoryId, categoryName, isEdit: false })
-  }
-
-  const updateFeaturedCategory = (idx: number, categoryId: string, categoryName: string) => {
-    setEditingFeaturedIndex(null)
-    const existing = sections[idx] as FeaturedSectionConfig
-    setFeaturedLabel(existing.label || categoryName)
-    setFeaturedSubtitle(existing.subtitle || '')
-    setFeaturedTitleModal({ categoryId, categoryName, isEdit: true })
   }
 
   const confirmFeaturedTitle = () => {
@@ -165,7 +169,7 @@ export function LayoutManager({
       setSections((prev) =>
         prev.map((s, i) =>
           i === editingFeaturedIndex
-            ? { ...s, categoryId, label: featuredLabel, subtitle: featuredSubtitle } as FeaturedSectionConfig
+            ? { ...s, categoryId, label: featuredLabel, subtitle: featuredSubtitle, moreAction: featuredMoreAction, display: featuredDisplay, perRow: featuredPerRow, rows: featuredRows, autoSeconds: featuredAutoSeconds } as FeaturedSectionConfig
             : s
         )
       )
@@ -178,11 +182,17 @@ export function LayoutManager({
         categoryId,
         label: featuredLabel,
         subtitle: featuredSubtitle,
+        moreAction: featuredMoreAction,
+        display: featuredDisplay,
+        perRow: featuredPerRow,
+        rows: featuredRows,
+        autoSeconds: featuredAutoSeconds,
       }
       setSections((prev) => [...prev, newSection])
     }
     setFeaturedTitleModal(null)
     setEditingFeaturedIndex(null)
+    setShowCatPickerInModal(false)
   }
 
   const openBannerPicker = (idx: number) => {
@@ -301,7 +311,7 @@ export function LayoutManager({
                           : section.type === 'categories'
                             ? '카드 배너'
                             : section.type === 'featured'
-                              ? ((section as FeaturedSectionConfig).label || '메인상품추출')
+                              ? (stripHtml((section as FeaturedSectionConfig).label) || '메인상품추출')
                               : section.type === 'cardBannerGroup'
                                 ? ((section as CardBannerGroupConfig).label || '카드배너 그룹')
                                 : '브랜드'}
@@ -343,26 +353,24 @@ export function LayoutManager({
                         </button>
                       )}
                       {section.type === 'featured' && (
-                        <>
-                          <button
-                            onClick={() => setEditingFeaturedIndex(idx)}
-                            className="rounded bg-white/20 px-1.5 py-0.5 text-[9px] text-white hover:bg-white/30"
-                          >
-                            카테고리 변경
-                          </button>
-                          <button
-                            onClick={() => {
-                              const cfg = section as FeaturedSectionConfig
-                              setEditingFeaturedIndex(idx)
-                              setFeaturedLabel(cfg.label || '')
-                              setFeaturedSubtitle(cfg.subtitle || '')
-                              setFeaturedTitleModal({ categoryId: cfg.categoryId || '', categoryName: cfg.label || '', isEdit: true })
-                            }}
-                            className="rounded bg-white/20 px-1.5 py-0.5 text-[9px] text-white hover:bg-white/30"
-                          >
-                            타이틀 편집
-                          </button>
-                        </>
+                        <button
+                          onClick={() => {
+                            const cfg = section as FeaturedSectionConfig
+                            setEditingFeaturedIndex(idx)
+                            setFeaturedLabel(cfg.label || '')
+                            setFeaturedSubtitle(cfg.subtitle || '')
+                            setFeaturedMoreAction(cfg.moreAction || 'link')
+                            setFeaturedDisplay(cfg.display || 'grid')
+                            setFeaturedPerRow(cfg.perRow || 4)
+                            setFeaturedRows(cfg.rows || 2)
+                            setFeaturedAutoSeconds(cfg.autoSeconds || 0)
+                            setShowCatPickerInModal(false)
+                            setFeaturedTitleModal({ categoryId: cfg.categoryId || '', categoryName: cfg.label || '', isEdit: true })
+                          }}
+                          className="rounded bg-white/20 px-1.5 py-0.5 text-[9px] text-white hover:bg-white/30"
+                        >
+                          편집
+                        </button>
                       )}
                       <button
                         onClick={() => toggleVisibility(idx)}
@@ -486,8 +494,8 @@ export function LayoutManager({
         />
       )}
 
-      {/* 카테고리 선택 모달 (인기상품용) */}
-      {(showCategoryPicker || editingFeaturedIndex !== null) && (
+      {/* 카테고리 선택 모달 (새 메인상품추출 추가 시) */}
+      {showCategoryPicker && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="mx-4 max-h-[70vh] w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="border-b border-zinc-100 px-6 py-4">
@@ -498,22 +506,13 @@ export function LayoutManager({
               <div className="space-y-0.5">
                 <CategoryTreePicker
                   allCategories={allCategories}
-                  onSelect={(catId, catName) => {
-                    if (editingFeaturedIndex !== null) {
-                      updateFeaturedCategory(editingFeaturedIndex, catId, catName)
-                    } else {
-                      addFeaturedWithCategory(catId, catName)
-                    }
-                  }}
+                  onSelect={(catId, catName) => addFeaturedWithCategory(catId, catName)}
                 />
               </div>
             </div>
             <div className="border-t border-zinc-100 px-6 py-3">
               <button
-                onClick={() => {
-                  setShowCategoryPicker(false)
-                  setEditingFeaturedIndex(null)
-                }}
+                onClick={() => setShowCategoryPicker(false)}
                 className="w-full rounded-lg border border-zinc-300 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
               >
                 취소
@@ -528,34 +527,165 @@ export function LayoutManager({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="mx-4 w-full max-w-md rounded-2xl bg-white shadow-2xl">
             <div className="border-b border-zinc-100 px-6 py-4">
-              <h3 className="text-lg font-semibold text-zinc-900">타이틀 설정</h3>
-              <p className="mt-1 text-sm text-zinc-500">메인에 표시될 제목과 부제목을 입력하세요</p>
+              <h3 className="text-lg font-semibold text-zinc-900">메인상품추출 설정</h3>
+              <p className="mt-1 text-sm text-zinc-500">카테고리, 제목, 더보기 동작을 한 번에 설정하세요</p>
             </div>
             <div className="space-y-4 p-6">
               <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">카테고리</label>
+                <div className="flex items-center justify-between rounded-lg border border-zinc-300 px-3 py-2">
+                  <span className="text-sm text-zinc-800">
+                    {allCategories.find((c) => c.id === featuredTitleModal.categoryId)?.name || '카테고리 미선택'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowCatPickerInModal((v) => !v)}
+                    className="rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+                  >
+                    {showCatPickerInModal ? '닫기' : '변경'}
+                  </button>
+                </div>
+                {showCatPickerInModal && (
+                  <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-zinc-200 p-2">
+                    <CategoryTreePicker
+                      allCategories={allCategories}
+                      onSelect={(catId, catName) => {
+                        setFeaturedTitleModal((m) => (m ? { ...m, categoryId: catId, categoryName: catName } : m))
+                        setShowCatPickerInModal(false)
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+              <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">타이틀</label>
-                <input
-                  type="text"
+                <InlineEditor
                   value={featuredLabel}
-                  onChange={(e) => setFeaturedLabel(e.target.value)}
+                  onChange={setFeaturedLabel}
                   placeholder="예: NEW ARRIVALS"
-                  className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
                 />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">서브타이틀</label>
-                <input
-                  type="text"
+                <InlineEditor
                   value={featuredSubtitle}
-                  onChange={(e) => setFeaturedSubtitle(e.target.value)}
+                  onChange={setFeaturedSubtitle}
                   placeholder="예: 새로 입고된 상품을 만나보세요"
-                  className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
                 />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">표시 형태</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFeaturedDisplay('grid')}
+                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                      featuredDisplay === 'grid'
+                        ? 'border-zinc-900 bg-zinc-900 text-white'
+                        : 'border-zinc-300 text-zinc-600 hover:bg-zinc-50'
+                    }`}
+                  >
+                    단일 (그리드)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFeaturedDisplay('slider')}
+                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                      featuredDisplay === 'slider'
+                        ? 'border-zinc-900 bg-zinc-900 text-white'
+                        : 'border-zinc-300 text-zinc-600 hover:bg-zinc-50'
+                    }`}
+                  >
+                    슬라이드
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">한 줄 갯수</label>
+                  <select
+                    value={featuredPerRow}
+                    onChange={(e) => setFeaturedPerRow(Number(e.target.value))}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-900 focus:outline-none"
+                  >
+                    {[2, 3, 4, 5, 6].map((n) => (
+                      <option key={n} value={n}>{n}개</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">줄 수</label>
+                  <select
+                    value={featuredRows}
+                    onChange={(e) => setFeaturedRows(Number(e.target.value))}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-900 focus:outline-none"
+                  >
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <option key={n} value={n}>{n}줄</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <p className="text-xs text-zinc-400">
+                {featuredDisplay === 'slider'
+                  ? `슬라이드: 한 화면에 ${featuredPerRow}개씩 ${featuredRows}줄, 좌우 화살표로 넘깁니다.`
+                  : `단일: 한 줄에 ${featuredPerRow}개씩 ${featuredRows}줄 = 총 ${featuredPerRow * featuredRows}개 표시.`}
+              </p>
+              {featuredDisplay === 'slider' && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">자동 넘김 (초)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={featuredAutoSeconds || ''}
+                    onChange={(e) => setFeaturedAutoSeconds(Math.max(0, Number(e.target.value) || 0))}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-900 focus:outline-none"
+                    placeholder="0 (자동 넘김 끔)"
+                  />
+                  <p className="mt-1 text-xs text-zinc-400">
+                    {featuredAutoSeconds > 0
+                      ? `${featuredAutoSeconds}초마다 한 칸씩 자동으로 넘어갑니다. (마우스 올리면 멈춤)`
+                      : '0이면 자동 넘김 끄기 (화살표로만 이동).'}
+                  </p>
+                </div>
+              )}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">&apos;더보기&apos; 버튼 동작</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFeaturedMoreAction('link')}
+                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                      featuredMoreAction === 'link'
+                        ? 'border-zinc-900 bg-zinc-900 text-white'
+                        : 'border-zinc-300 text-zinc-600 hover:bg-zinc-50'
+                    }`}
+                  >
+                    카테고리 페이지로 이동
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFeaturedMoreAction('expand')}
+                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                      featuredMoreAction === 'expand'
+                        ? 'border-zinc-900 bg-zinc-900 text-white'
+                        : 'border-zinc-300 text-zinc-600 hover:bg-zinc-50'
+                    }`}
+                  >
+                    이 자리에서 더 보기
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-zinc-400">
+                  {featuredMoreAction === 'link'
+                    ? '더보기를 누르면 해당 카테고리 상품 페이지로 이동합니다.'
+                    : '더보기를 누르면 이 섹션에서 상품을 더 펼쳐서 보여줍니다.'}
+                </p>
               </div>
             </div>
             <div className="flex gap-3 border-t border-zinc-100 px-6 py-4">
               <button
-                onClick={() => { setFeaturedTitleModal(null); setEditingFeaturedIndex(null) }}
+                onClick={() => { setFeaturedTitleModal(null); setEditingFeaturedIndex(null); setShowCatPickerInModal(false) }}
                 className="flex-1 rounded-lg border border-zinc-300 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
               >
                 취소
@@ -972,11 +1102,16 @@ function CategoriesPreview() {
   )
 }
 
+// 미리보기용: 라벨에 HTML이 들어있어도 태그를 벗겨 텍스트만 표시
+function stripHtml(s?: string) {
+  return (s || '').replace(/<[^>]*>/g, '').trim()
+}
+
 function FeaturedPreview({ label }: { label?: string }) {
   return (
     <div className="bg-zinc-50 px-8 py-8">
       <p className="mb-4 text-center text-sm font-bold text-zinc-700">
-        {label || '메인상품추출'}
+        {stripHtml(label) || '메인상품추출'}
       </p>
       <div className="grid grid-cols-4 gap-3">
         {Array.from({ length: 4 }).map((_, i) => (

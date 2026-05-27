@@ -1,14 +1,24 @@
-import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { FeaturedProducts } from './featured-products'
 
 export async function FeaturedSection({
   categoryId,
   label,
   subtitle,
+  moreAction = 'link',
+  display = 'grid',
+  perRow = 4,
+  rows = 2,
+  autoSeconds = 0,
 }: {
   categoryId: string
   label: string
   subtitle?: string
+  moreAction?: 'link' | 'expand'
+  display?: 'grid' | 'slider'
+  perRow?: number
+  rows?: number
+  autoSeconds?: number
 }) {
   const supabase = await createClient()
 
@@ -44,14 +54,16 @@ export async function FeaturedSection({
 
   if (allNos.length === 0) return null
 
-  // category_nos 배열에 해당 번호가 포함된 상품 조회
+  // 한 줄 갯수 × 줄 수 = 기본 노출 수. 슬라이드/펼치기는 더 가져와서 스크롤·확장에 사용
+  const base = Math.max(1, perRow * rows)
+  const limit = display === 'slider' || moreAction === 'expand' ? Math.max(base, 40) : base
   const { data: products } = await supabase
     .from('products')
     .select('id, name, slug, price, thumbnail_url')
     .overlaps('category_nos', allNos)
     .eq('is_active', true)
     .order('product_no', { ascending: false, nullsFirst: false })
-    .limit(8)
+    .limit(limit)
 
   if (!products || products.length === 0) return null
 
@@ -59,42 +71,19 @@ export async function FeaturedSection({
     <section className="pt-4 pb-12">
       <div className="mx-auto max-w-7xl px-4">
         <div className="mb-6">
-          <h2 className="w-full text-[17px] font-bold text-zinc-900">{label}</h2>
-          {subtitle && <p className="mt-1 text-sm text-zinc-500">{subtitle}</p>}
+          <h2 className="w-full [&_p]:my-0" dangerouslySetInnerHTML={{ __html: label }} />
+          {subtitle && <div className="mt-1 [&_p]:my-0" dangerouslySetInnerHTML={{ __html: subtitle }} />}
         </div>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-8 md:grid-cols-4">
-          {products.map((product) => (
-            <Link
-              key={product.id}
-              href={`/product/${product.slug || product.id}`}
-              className="group"
-            >
-              <div className="aspect-square overflow-hidden bg-zinc-100">
-                {product.thumbnail_url ? (
-                  <img
-                    src={product.thumbnail_url}
-                    alt={product.name}
-                    className="w-full object-cover transition group-hover:scale-105"
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center text-xs text-zinc-400">이미지 준비중</div>
-                )}
-              </div>
-              <div className="mt-3">
-                <p className="text-sm text-zinc-900 line-clamp-1">{product.name}</p>
-                <p className="mt-1 text-sm font-bold text-zinc-900">{product.price.toLocaleString()}원</p>
-              </div>
-            </Link>
-          ))}
-        </div>
-        <div className="mt-8 text-center">
-          <Link
-            href={`/category/${self?.slug || categoryId}`}
-            className="inline-block rounded-[9px] border border-[#2c2c2c] px-5 py-2 text-[14px] text-[#2c2c2c]"
-          >
-            더보기
-          </Link>
-        </div>
+        <FeaturedProducts
+          products={products}
+          mode={moreAction}
+          display={display}
+          perRow={perRow}
+          rows={rows}
+          autoSeconds={autoSeconds}
+          categoryHref={`/category/${self?.slug || categoryId}`}
+          fromCategoryId={categoryId}
+        />
       </div>
     </section>
   )

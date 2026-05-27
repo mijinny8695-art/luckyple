@@ -13,6 +13,9 @@ export type Category = {
   sort_order: number
   image_url: string | null
   is_main: boolean
+  banner_url: string | null
+  banner_video_url: string | null
+  banner_show_overlay: boolean
   created_at: string
   children?: Category[]
 }
@@ -68,6 +71,9 @@ export async function createCategory(formData: FormData) {
   const sortOrder = parseInt(formData.get('sort_order') as string) || 0
   const imageUrl = (formData.get('image_url') as string)?.trim() || null
   const isMain = formData.get('is_main') === 'true'
+  const bannerUrl = (formData.get('banner_url') as string)?.trim() || null
+  const bannerVideoUrl = (formData.get('banner_video_url') as string)?.trim() || null
+  const bannerShowOverlay = formData.get('banner_show_overlay') !== 'false'
 
   let level = 1
   if (parentId) {
@@ -104,6 +110,9 @@ export async function createCategory(formData: FormData) {
     sort_order: sortOrder,
     image_url: imageUrl,
     is_main: isMain,
+    banner_url: bannerUrl,
+    banner_video_url: bannerVideoUrl,
+    banner_show_overlay: bannerShowOverlay,
   })
 
   if (error) {
@@ -111,6 +120,7 @@ export async function createCategory(formData: FormData) {
   }
 
   revalidatePath('/admin/categories')
+  revalidatePath('/category/[id]', 'page')
   return { success: true }
 }
 
@@ -123,6 +133,9 @@ export async function updateCategory(formData: FormData) {
   const sortOrder = parseInt(formData.get('sort_order') as string) || 0
   const imageUrl = (formData.get('image_url') as string)?.trim() || null
   const isMain = formData.get('is_main') === 'true'
+  const bannerUrl = (formData.get('banner_url') as string)?.trim() || null
+  const bannerVideoUrl = (formData.get('banner_video_url') as string)?.trim() || null
+  const bannerShowOverlay = formData.get('banner_show_overlay') !== 'false'
 
   // slug 업데이트
   const { data: current } = await supabase
@@ -146,7 +159,7 @@ export async function updateCategory(formData: FormData) {
 
   const { error } = await supabase
     .from('categories')
-    .update({ name, slug, category_no: categoryNo, sort_order: sortOrder, image_url: imageUrl, is_main: isMain })
+    .update({ name, slug, category_no: categoryNo, sort_order: sortOrder, image_url: imageUrl, is_main: isMain, banner_url: bannerUrl, banner_video_url: bannerVideoUrl, banner_show_overlay: bannerShowOverlay })
     .eq('id', id)
 
   if (error) {
@@ -154,6 +167,7 @@ export async function updateCategory(formData: FormData) {
   }
 
   revalidatePath('/admin/categories')
+  revalidatePath('/category/[id]', 'page')
   return { success: true }
 }
 

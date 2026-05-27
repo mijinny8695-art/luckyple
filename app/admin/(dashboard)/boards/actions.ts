@@ -13,6 +13,8 @@ export type Board = {
   description: string | null
   board_type: BoardType
   board_categories: string[]
+  banner_url: string | null
+  banner_video_url: string | null
   sort_order: number
   is_active: boolean
   created_at: string
@@ -51,6 +53,8 @@ export async function createBoard(siteId: string, formData: FormData) {
     description,
     board_type: boardType,
     board_categories: boardCategories,
+    banner_url: (formData.get('banner_url') as string)?.trim() || null,
+    banner_video_url: (formData.get('banner_video_url') as string)?.trim() || null,
   })
 
   if (error) {
@@ -59,6 +63,7 @@ export async function createBoard(siteId: string, formData: FormData) {
   }
 
   revalidatePath('/admin/boards')
+  revalidatePath('/board/[slug]', 'page')
   return { success: true }
 }
 
@@ -77,12 +82,22 @@ export async function updateBoard(id: string, formData: FormData) {
 
   const { error } = await supabase
     .from('boards')
-    .update({ name, slug, description, board_type: boardType, is_active: isActive, board_categories: boardCategories })
+    .update({
+      name,
+      slug,
+      description,
+      board_type: boardType,
+      is_active: isActive,
+      board_categories: boardCategories,
+      banner_url: (formData.get('banner_url') as string)?.trim() || null,
+      banner_video_url: (formData.get('banner_video_url') as string)?.trim() || null,
+    })
     .eq('id', id)
 
   if (error) return { error: '게시판 수정 중 오류가 발생했습니다.' }
 
   revalidatePath('/admin/boards')
+  revalidatePath('/board/[slug]', 'page')
   return { success: true }
 }
 
@@ -90,5 +105,6 @@ export async function deleteBoard(id: string) {
   const supabase = await createClient()
   await supabase.from('boards').delete().eq('id', id)
   revalidatePath('/admin/boards')
+  revalidatePath('/board/[slug]', 'page')
   return { success: true }
 }

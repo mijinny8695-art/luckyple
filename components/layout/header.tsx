@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { HeaderAuth } from './header-auth'
 import { NavDropdown } from './nav-dropdown'
 import { MobileMenu } from './mobile-menu'
+import { CategoryMenu } from './category-menu'
 import type { NavItem } from '@/lib/types/design'
 import { getCachedCategories } from '@/lib/site'
 import { HeaderSearch } from './header-search'
@@ -70,7 +71,11 @@ export async function Header({
 
       {items.length > 0 && (
         <div className="hidden md:block">
-          <nav className="mx-auto flex max-w-7xl items-center justify-center px-4">
+          <div className="relative mx-auto max-w-7xl px-4">
+            <div className="absolute left-4 top-0">
+              <CategoryMenu items={items} />
+            </div>
+            <nav className="flex items-center justify-center">
             {items.map((item, index) => (
               item.children && item.children.length > 0 ? (
                 <NavDropdown key={`${item.href}-${index}`} item={item} />
@@ -85,7 +90,8 @@ export async function Header({
                 </Link>
               )
             ))}
-          </nav>
+            </nav>
+          </div>
         </div>
       )}
     </header>
