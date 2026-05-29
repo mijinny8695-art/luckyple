@@ -67,7 +67,7 @@ export function DesignTabs({
 
       {/* 컨텐츠 */}
       {activeTab === 'layout' && (
-        <LayoutManager siteId={siteId} layout={layout} banners={banners} categories={categories} />
+        <LayoutManager siteId={siteId} layout={layout} banners={banners} categories={categories} boards={boards} />
       )}
       {activeTab === 'banners' && (
         <BannerManager banners={banners} siteId={siteId} />

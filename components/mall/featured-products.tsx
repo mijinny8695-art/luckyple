@@ -15,6 +15,7 @@ type Product = {
 type Props = {
   products: Product[]
   mode: 'link' | 'expand'
+  showMoreButton?: boolean
   display?: 'grid' | 'slider'
   perRow?: number
   rows?: number
@@ -65,7 +66,7 @@ export function FeaturedProducts(props: Props) {
 }
 
 // ── 단일 그리드 ──
-function GridView({ products, mode, perRow = 4, rows = 2, categoryHref, fromCategoryId }: Props) {
+function GridView({ products, mode, showMoreButton = true, perRow = 4, rows = 2, categoryHref, fromCategoryId }: Props) {
   const base = Math.max(1, perRow * rows)
   const [visible, setVisible] = useState(base)
   const shown = mode === 'expand' ? products.slice(0, visible) : products.slice(0, base)
@@ -82,7 +83,7 @@ function GridView({ products, mode, perRow = 4, rows = 2, categoryHref, fromCate
         ))}
       </div>
 
-      {mode === 'expand' ? (
+      {showMoreButton && (mode === 'expand' ? (
         canExpand && (
           <div className="mt-8 text-center">
             <button
@@ -96,7 +97,7 @@ function GridView({ products, mode, perRow = 4, rows = 2, categoryHref, fromCate
         )
       ) : (
         <MoreLink href={categoryHref} />
-      )}
+      ))}
     </>
   )
 }
@@ -173,7 +174,7 @@ function RowSlider({
 }
 
 // ── 가로 슬라이드: 줄마다 독립 슬라이더, 더보기로 줄 1개씩 추가 ──
-function SliderView({ products, mode, perRow = 4, rows = 2, autoSeconds = 0, categoryHref, fromCategoryId }: Props) {
+function SliderView({ products, mode, showMoreButton = true, perRow = 4, rows = 2, autoSeconds = 0, categoryHref, fromCategoryId }: Props) {
   // 더보기를 누르면 줄(독립 슬라이더)을 1개씩 추가
   const [displayRows, setDisplayRows] = useState(Math.max(1, rows))
   // 한 줄(슬라이더)에 담을 상품 수 (화살표로 가로 스크롤할 분량)
@@ -196,7 +197,7 @@ function SliderView({ products, mode, perRow = 4, rows = 2, autoSeconds = 0, cat
         ))}
       </div>
 
-      {mode === 'expand' ? (
+      {showMoreButton && (mode === 'expand' ? (
         hasMore && (
           <div className="mt-8 text-center">
             <button
@@ -210,7 +211,7 @@ function SliderView({ products, mode, perRow = 4, rows = 2, autoSeconds = 0, cat
         )
       ) : (
         <MoreLink href={categoryHref} />
-      )}
+      ))}
     </>
   )
 }

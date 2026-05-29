@@ -109,6 +109,9 @@ export async function createPost(formData: FormData) {
   if (!boardId) return { error: '게시판을 선택하세요.' }
   if (!title) return { error: '제목을 입력하세요.' }
 
+  const createdAtStr = (formData.get('created_at') as string)?.trim()
+  const createdAtIso = createdAtStr ? new Date(createdAtStr).toISOString() : undefined
+
   const { error } = await supabase.from('board_posts').insert({
     board_id: boardId,
     title,
@@ -118,6 +121,8 @@ export async function createPost(formData: FormData) {
     is_notice: formData.get('is_notice') === 'true',
     is_published: formData.get('is_published') !== 'false',
     like_count: Math.max(0, parseInt(formData.get('like_count') as string) || 0),
+    view_count: Math.max(0, parseInt(formData.get('view_count') as string) || 0),
+    ...(createdAtIso ? { created_at: createdAtIso } : {}),
   })
 
   if (error) return { error: '게시물 등록 중 오류가 발생했습니다.' }
@@ -143,6 +148,8 @@ export async function updatePost(formData: FormData) {
       is_notice: formData.get('is_notice') === 'true',
       is_published: formData.get('is_published') !== 'false',
       like_count: Math.max(0, parseInt(formData.get('like_count') as string) || 0),
+      view_count: Math.max(0, parseInt(formData.get('view_count') as string) || 0),
+      ...(((formData.get('created_at') as string)?.trim()) ? { created_at: new Date(formData.get('created_at') as string).toISOString() } : {}),
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)

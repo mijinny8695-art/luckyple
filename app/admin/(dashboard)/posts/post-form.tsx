@@ -10,6 +10,13 @@ type BoardOpt = { id: string; name: string; board_categories: string[] }
 const inputClass =
   'w-full rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900'
 
+// ISO 타임스탬프를 datetime-local 인풋 포맷(YYYY-MM-DDTHH:mm)으로 변환
+function toLocalDateTime(iso?: string | null) {
+  const d = iso ? new Date(iso) : new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 export function PostForm({ boards, post }: { boards: BoardOpt[]; post?: Post | null }) {
   const router = useRouter()
   const isEdit = !!post
@@ -84,6 +91,23 @@ export function PostForm({ boards, post }: { boards: BoardOpt[]; post?: Post | n
         <div>
           <label htmlFor="like_count" className="mb-1 block text-sm font-medium text-zinc-700">좋아요 수</label>
           <input id="like_count" name="like_count" type="number" min={0} defaultValue={post?.like_count ?? 0} className={inputClass} />
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div>
+          <label htmlFor="created_at" className="mb-1 block text-sm font-medium text-zinc-700">작성일</label>
+          <input
+            id="created_at"
+            name="created_at"
+            type="datetime-local"
+            defaultValue={toLocalDateTime(post?.created_at)}
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label htmlFor="view_count" className="mb-1 block text-sm font-medium text-zinc-700">조회수</label>
+          <input id="view_count" name="view_count" type="number" min={0} defaultValue={post?.view_count ?? 0} className={inputClass} />
         </div>
       </div>
 

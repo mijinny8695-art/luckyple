@@ -114,7 +114,7 @@ export default async function CategoryPage({
     ...grandChildNos,
   ].filter(Boolean) as string[]
 
-  let initialProducts: any[] = []
+  let initialProducts: { id: string; name: string; slug: string | null; price: number; thumbnail_url: string | null }[] = []
   let total = 0
 
   if (allNos.length > 0) {

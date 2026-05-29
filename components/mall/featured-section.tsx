@@ -6,6 +6,7 @@ export async function FeaturedSection({
   label,
   subtitle,
   moreAction = 'link',
+  showMoreButton = true,
   display = 'grid',
   perRow = 4,
   rows = 2,
@@ -15,6 +16,7 @@ export async function FeaturedSection({
   label: string
   subtitle?: string
   moreAction?: 'link' | 'expand'
+  showMoreButton?: boolean
   display?: 'grid' | 'slider'
   perRow?: number
   rows?: number
@@ -77,6 +79,7 @@ export async function FeaturedSection({
         <FeaturedProducts
           products={products}
           mode={moreAction}
+          showMoreButton={showMoreButton}
           display={display}
           perRow={perRow}
           rows={rows}

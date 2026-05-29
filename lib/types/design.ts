@@ -27,7 +27,16 @@ export type NavItem = {
 
 // ── 레이아웃 섹션 타입 ──
 
-export type LayoutSectionType = 'banner' | 'categories' | 'featured' | 'brands' | 'cardBannerGroup'
+export type LayoutSectionType =
+  | 'banner'
+  | 'categories'
+  | 'featured'
+  | 'brands'
+  | 'cardBannerGroup'
+  | 'divider'
+  | 'text'
+  | 'spacer'
+  | 'board'
 
 export type LayoutSectionBase = {
   id: string
@@ -64,6 +73,8 @@ export type FeaturedSectionConfig = LayoutSectionBase & {
   subtitle?: string
   // 더보기 버튼 동작: 'link' = 카테고리 페이지로 이동(기본), 'expand' = 인라인으로 더 보여주기
   moreAction?: 'link' | 'expand'
+  // 더보기 버튼 표시 여부 (기본 true)
+  showMoreButton?: boolean
   // 표시 형태: 'grid' = 단일 그리드(기본), 'slider' = 가로 슬라이드
   display?: 'grid' | 'slider'
   perRow?: number // 한 줄에 보여줄 상품 수 (데스크탑)
@@ -82,12 +93,50 @@ export type CardBannerGroupConfig = LayoutSectionBase & {
   cardHeight?: number
 }
 
+// ── 단순 위젯들 ──
+
+export type DividerWidgetConfig = LayoutSectionBase & {
+  type: 'divider'
+  thickness?: number // px, 기본 1
+  color?: string // hex, 기본 #e4e4e7
+  marginY?: number // 상하 여백 px, 기본 24
+  style?: 'solid' | 'dashed' | 'dotted' | 'double' | 'dashdot' // 선 종류, 기본 'solid'
+}
+
+export type TextWidgetConfig = LayoutSectionBase & {
+  type: 'text'
+  html?: string // TipTap/리치 텍스트 HTML
+  align?: 'left' | 'center' | 'right'
+  marginY?: number // 상하 여백 px, 기본 16
+}
+
+export type SpacerWidgetConfig = LayoutSectionBase & {
+  type: 'spacer'
+  height?: number // px, 기본 40
+}
+
+export type BoardSectionConfig = LayoutSectionBase & {
+  type: 'board'
+  boardId?: string
+  label?: string
+  subtitle?: string
+  perRow?: number // 한 줄에 표시 개수, 기본 1 (리스트형)
+  rows?: number // 줄 수, 기본 5
+  showMoreButton?: boolean // 기본 true
+  showThumbnail?: boolean // 기본 true
+  showDate?: boolean // 기본 true
+}
+
 export type LayoutSection =
   | BannerSectionConfig
   | CategoriesSectionConfig
   | FeaturedSectionConfig
   | BrandsSectionConfig
   | CardBannerGroupConfig
+  | DividerWidgetConfig
+  | TextWidgetConfig
+  | SpacerWidgetConfig
+  | BoardSectionConfig
 
 export type SiteDesign = {
   id: string

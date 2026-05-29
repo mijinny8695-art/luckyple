@@ -1,7 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-import Image from 'next/image'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import type {
   Banner,
   LayoutSection,
@@ -10,6 +9,10 @@ import type {
   CategoriesSectionConfig,
   CardBannerGroupConfig,
   CategoryCard,
+  DividerWidgetConfig,
+  TextWidgetConfig,
+  SpacerWidgetConfig,
+  BoardSectionConfig,
 } from '@/lib/types/design'
 import { saveLayout } from './actions'
 import { BannerPickerModal } from './banner-picker-modal'
@@ -26,16 +29,24 @@ type CategoryOption = {
   parent_id: string | null
 }
 
+type BoardOption = {
+  id: string
+  name: string
+  slug: string
+}
+
 export function LayoutManager({
   siteId,
   layout: initialLayout,
   banners,
   categories: allCategories,
+  boards,
 }: {
   siteId: string
   layout: LayoutSection[]
   banners: Banner[]
   categories: CategoryOption[]
+  boards: BoardOption[]
 }) {
   const [sections, setSections] = useState<LayoutSection[]>(initialLayout)
   const [saving, setSaving] = useState(false)
@@ -47,6 +58,14 @@ export function LayoutManager({
     useState<BannerSectionConfig | null>(null)
   const [pickerIndex, setPickerIndex] = useState<number>(-1)
   const [showAddMenu, setShowAddMenu] = useState(false)
+  const [viewMode, setViewMode] = useState<'pc' | 'mobile'>('pc')
+  const [previewKey, setPreviewKey] = useState(0)
+  const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null)
+  const [sectionRects, setSectionRects] = useState<
+    Record<string, { top: number; left: number; width: number; height: number }>
+  >({})
+  const [iframeHeight, setIframeHeight] = useState<number>(720)
+  const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const [editingCategoryIndex, setEditingCategoryIndex] = useState<number | null>(null)
   const [categoryLabel, setCategoryLabel] = useState('')
   const [categorySubtitle, setCategorySubtitle] = useState('')
@@ -56,53 +75,15 @@ export function LayoutManager({
   const [categoryCards, setCategoryCards] = useState<CategoryCard[]>([])
   const [uploadingCardImage, setUploadingCardImage] = useState(false)
 
-  // 드래그 상태
-  const [dragIndex, setDragIndex] = useState<number | null>(null)
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
-
-  const handleDragStart = useCallback((idx: number) => {
-    setDragIndex(idx)
-  }, [])
-
-  const handleDragOver = useCallback(
-    (e: React.DragEvent, idx: number) => {
-      e.preventDefault()
-      if (dragIndex === null || dragIndex === idx) return
-      setDragOverIndex(idx)
-    },
-    [dragIndex],
-  )
-
-  const handleDrop = useCallback(
-    (idx: number) => {
-      if (dragIndex === null || dragIndex === idx) return
-      setSections((prev) => {
-        const next = [...prev]
-        const [moved] = next.splice(dragIndex, 1)
-        next.splice(idx, 0, moved)
-        return next
-      })
-      setDragIndex(null)
-      setDragOverIndex(null)
-    },
-    [dragIndex],
-  )
-
-  const handleDragEnd = useCallback(() => {
-    setDragIndex(null)
-    setDragOverIndex(null)
-  }, [])
-
-  const toggleVisibility = (idx: number) => {
-    setSections((prev) =>
-      prev.map((s, i) => (i === idx ? { ...s, visible: !s.visible } : s)),
-    )
+  // 변경 사항 추적 (저장 버튼 강조용)
+  const [dirty, setDirty] = useState(false)
+  // sections 를 직접 갱신하는 헬퍼 — 항상 dirty 플래그도 함께 켠다
+  const updateSections = (updater: (prev: LayoutSection[]) => LayoutSection[]) => {
+    setSections(updater)
+    setDirty(true)
   }
 
-  const deleteSection = (idx: number) => {
-    if (!confirm('이 섹션을 삭제하시겠습니까?')) return
-    setSections((prev) => prev.filter((_, i) => i !== idx))
-  }
+  // (toggleVisibility / deleteSection / moveSection 은 iframeRef 가 선언된 아래에서 정의)
 
   const [showCategoryPicker, setShowCategoryPicker] = useState(false)
   const [editingFeaturedIndex, setEditingFeaturedIndex] = useState<number | null>(null)
@@ -110,18 +91,33 @@ export function LayoutManager({
   const [featuredLabel, setFeaturedLabel] = useState('')
   const [featuredSubtitle, setFeaturedSubtitle] = useState('')
   const [featuredMoreAction, setFeaturedMoreAction] = useState<'link' | 'expand'>('link')
+  const [featuredShowMore, setFeaturedShowMore] = useState(true)
   const [featuredDisplay, setFeaturedDisplay] = useState<'grid' | 'slider'>('grid')
   const [featuredPerRow, setFeaturedPerRow] = useState(4)
   const [featuredRows, setFeaturedRows] = useState(2)
   const [featuredAutoSeconds, setFeaturedAutoSeconds] = useState(0)
   const [showCatPickerInModal, setShowCatPickerInModal] = useState(false)
 
+  // 게시판 위젯 모달 상태
+  const [editingBoardIndex, setEditingBoardIndex] = useState<number | null>(null) // -1 = 신규
+  const [showBoardPicker, setShowBoardPicker] = useState(false) // 추가 시 게시판 선택 단계
+  const [boardWidgetBoardId, setBoardWidgetBoardId] = useState('')
+  const [boardWidgetLabel, setBoardWidgetLabel] = useState('')
+  const [boardWidgetSubtitle, setBoardWidgetSubtitle] = useState('')
+  const [boardWidgetPerRow, setBoardWidgetPerRow] = useState(1)
+  const [boardWidgetRows, setBoardWidgetRows] = useState(5)
+  const [boardWidgetShowMore, setBoardWidgetShowMore] = useState(true)
+  const [boardWidgetShowThumb, setBoardWidgetShowThumb] = useState(true)
+  const [boardWidgetShowDate, setBoardWidgetShowDate] = useState(true)
+
   const addSection = (type: LayoutSection['type']) => {
     const id = generateId()
-    let newSection: LayoutSection
 
     if (type === 'banner') {
-      newSection = {
+      // 배너는 모달에서 먼저 배너를 골라야 storefront 에 노드가 생김
+      // → 빈 placeholder 섹션으로 BannerPickerModal 을 띄우고, confirm 시점에 추가
+      setShowAddMenu(false)
+      const placeholder: BannerSectionConfig = {
         id,
         type: 'banner',
         visible: true,
@@ -129,24 +125,55 @@ export function LayoutManager({
         display: 'carousel',
         bannerIds: [],
       }
+      setPickerSection(placeholder)
+      setPickerIndex(-1) // -1 = 새로 추가 모드
+      return
     } else if (type === 'featured') {
       setShowAddMenu(false)
       setShowCategoryPicker(true)
       return
+    } else if (type === 'board') {
+      // 게시판 위젯: 게시판 선택 → 편집 모달
+      setShowAddMenu(false)
+      setShowBoardPicker(true)
+      return
     } else if (type === 'cardBannerGroup') {
-      newSection = {
-        id,
-        type: 'cardBannerGroup',
-        visible: true,
-        label: '카드배너',
-        cards: [],
-      }
-    } else {
-      newSection = { id, type, visible: true } as LayoutSection
+      // 카드배너 그룹도 빈 카드면 storefront 에 렌더 안 되므로 모달 먼저
+      setShowAddMenu(false)
+      setCategoryCards([])
+      setCardBannerLabel('카드배너')
+      setCardBannerHeight(100)
+      setEditingCardBannerIndex(-1) // -1 = 새로 추가 모드
+      return
     }
 
-    setSections((prev) => [...prev, newSection])
+    // 단순 위젯: 편집 모달부터 띄우고, 사용자가 「저장」 눌러야 실제로 추가됨
+    if (type === 'divider') {
+      setShowAddMenu(false)
+      setWidgetThickness(1)
+      setWidgetColor('#e4e4e7')
+      setWidgetMarginY(24)
+      setWidgetStyle('solid')
+      setEditingWidget({ idx: -1, type: 'divider' }) // -1 = 새로 추가 모드
+      return
+    } else if (type === 'text') {
+      setShowAddMenu(false)
+      setWidgetHtml('')
+      setWidgetAlign('left')
+      setWidgetMarginY(16)
+      setEditingWidget({ idx: -1, type: 'text' })
+      return
+    } else if (type === 'spacer') {
+      setShowAddMenu(false)
+      setWidgetHeight(40)
+      setEditingWidget({ idx: -1, type: 'spacer' })
+      return
+    }
+
+    const newSection: LayoutSection = { id, type, visible: true } as LayoutSection
     setShowAddMenu(false)
+    // iframe DOM 으로 흉내 낼 수 없으므로 즉시 저장 후 iframe 새로고침
+    void saveAndRefresh([...sections, newSection])
   }
 
   const addFeaturedWithCategory = (categoryId: string, categoryName: string) => {
@@ -154,6 +181,7 @@ export function LayoutManager({
     setFeaturedLabel(categoryName)
     setFeaturedSubtitle('')
     setFeaturedMoreAction('link')
+    setFeaturedShowMore(true)
     setFeaturedDisplay('grid')
     setFeaturedPerRow(4)
     setFeaturedRows(2)
@@ -165,13 +193,12 @@ export function LayoutManager({
     if (!featuredTitleModal) return
     const { categoryId, isEdit } = featuredTitleModal
 
+    let newSections: LayoutSection[]
     if (isEdit && editingFeaturedIndex !== null) {
-      setSections((prev) =>
-        prev.map((s, i) =>
-          i === editingFeaturedIndex
-            ? { ...s, categoryId, label: featuredLabel, subtitle: featuredSubtitle, moreAction: featuredMoreAction, display: featuredDisplay, perRow: featuredPerRow, rows: featuredRows, autoSeconds: featuredAutoSeconds } as FeaturedSectionConfig
-            : s
-        )
+      newSections = sections.map((s, i) =>
+        i === editingFeaturedIndex
+          ? { ...s, categoryId, label: featuredLabel, subtitle: featuredSubtitle, moreAction: featuredMoreAction, showMoreButton: featuredShowMore, display: featuredDisplay, perRow: featuredPerRow, rows: featuredRows, autoSeconds: featuredAutoSeconds } as FeaturedSectionConfig
+          : s
       )
     } else {
       const id = generateId()
@@ -183,16 +210,73 @@ export function LayoutManager({
         label: featuredLabel,
         subtitle: featuredSubtitle,
         moreAction: featuredMoreAction,
+        showMoreButton: featuredShowMore,
         display: featuredDisplay,
         perRow: featuredPerRow,
         rows: featuredRows,
         autoSeconds: featuredAutoSeconds,
       }
-      setSections((prev) => [...prev, newSection])
+      newSections = [...sections, newSection]
     }
     setFeaturedTitleModal(null)
     setEditingFeaturedIndex(null)
     setShowCatPickerInModal(false)
+    void saveAndRefresh(newSections)
+  }
+
+  // 게시판 위젯 — 게시판 선택 후 편집 모달 열기
+  const addBoardWidget = (boardId: string, boardName: string) => {
+    setShowBoardPicker(false)
+    setBoardWidgetBoardId(boardId)
+    setBoardWidgetLabel(boardName)
+    setBoardWidgetSubtitle('')
+    setBoardWidgetPerRow(1)
+    setBoardWidgetRows(5)
+    setBoardWidgetShowMore(true)
+    setBoardWidgetShowThumb(true)
+    setBoardWidgetShowDate(true)
+    setEditingBoardIndex(-1)
+  }
+
+  const confirmBoardWidget = () => {
+    if (editingBoardIndex === null) return
+    if (!boardWidgetBoardId) return
+
+    let newSections: LayoutSection[]
+    if (editingBoardIndex === -1) {
+      const newSection: BoardSectionConfig = {
+        id: generateId(),
+        type: 'board',
+        visible: true,
+        boardId: boardWidgetBoardId,
+        label: boardWidgetLabel,
+        subtitle: boardWidgetSubtitle,
+        perRow: boardWidgetPerRow,
+        rows: boardWidgetRows,
+        showMoreButton: boardWidgetShowMore,
+        showThumbnail: boardWidgetShowThumb,
+        showDate: boardWidgetShowDate,
+      }
+      newSections = [...sections, newSection]
+    } else {
+      newSections = sections.map((s, i) =>
+        i === editingBoardIndex
+          ? {
+              ...s,
+              boardId: boardWidgetBoardId,
+              label: boardWidgetLabel,
+              subtitle: boardWidgetSubtitle,
+              perRow: boardWidgetPerRow,
+              rows: boardWidgetRows,
+              showMoreButton: boardWidgetShowMore,
+              showThumbnail: boardWidgetShowThumb,
+              showDate: boardWidgetShowDate,
+            } as BoardSectionConfig
+          : s,
+      )
+    }
+    setEditingBoardIndex(null)
+    void saveAndRefresh(newSections)
   }
 
   const openBannerPicker = (idx: number) => {
@@ -202,11 +286,13 @@ export function LayoutManager({
   }
 
   const handlePickerConfirm = (updated: BannerSectionConfig) => {
-    setSections((prev) =>
-      prev.map((s, i) => (i === pickerIndex ? updated : s)),
-    )
+    const newSections =
+      pickerIndex === -1
+        ? [...sections, updated] // 새 배너 섹션 추가
+        : sections.map((s, i) => (i === pickerIndex ? updated : s)) // 기존 편집
     setPickerSection(null)
     setPickerIndex(-1)
+    void saveAndRefresh(newSections)
   }
 
   const handleSave = async () => {
@@ -218,11 +304,282 @@ export function LayoutManager({
     } else {
       setMessage({ type: 'success', text: '레이아웃이 저장되었습니다.' })
       setTimeout(() => setMessage(null), 3000)
+      setDirty(false)
+      // 저장된 깨끗한 상태로 iframe 새로고침
+      setPreviewKey((k) => k + 1)
     }
     setSaving(false)
   }
 
-  const bannerMap = new Map(banners.map((b) => [b.id, b]))
+  // 콘텐츠 추가/편집 후 즉시 저장 + iframe 새로고침 (DOM으로 흉내 낼 수 없는 변경)
+  const saveAndRefresh = async (newSections: LayoutSection[]) => {
+    setSections(newSections)
+    setSaving(true)
+    setMessage(null)
+    const result = await saveLayout(siteId, newSections)
+    if (result.error) {
+      setMessage({ type: 'error', text: result.error })
+      setDirty(true)
+    } else {
+      setDirty(false)
+      setPreviewKey((k) => k + 1)
+    }
+    setSaving(false)
+  }
+
+  // iframe 안의 섹션 좌표 측정 → 오버레이 위치 동기화
+  const measureSections = useCallback(() => {
+    const iframe = iframeRef.current
+    if (!iframe) return
+    const doc = iframe.contentDocument
+    if (!doc) return
+    const nodes = doc.querySelectorAll<HTMLElement>('[data-section-id]')
+    const next: Record<string, { top: number; left: number; width: number; height: number }> = {}
+    nodes.forEach((el) => {
+      const id = el.getAttribute('data-section-id')
+      if (!id) return
+      const r = el.getBoundingClientRect()
+      next[id] = { top: el.offsetTop, left: r.left, width: r.width, height: r.height }
+      // offsetTop는 iframe document 기준 절대 y(스크롤 영향 없음); 가로는 viewport 기준이라 left는 0으로 가정
+      next[id].left = 0
+    })
+    // 전체 문서 높이도 갱신 (iframe 안 콘텐츠가 길어지면 따라가게)
+    const docHeight = Math.max(
+      doc.body?.scrollHeight ?? 0,
+      doc.documentElement?.scrollHeight ?? 0,
+    )
+    if (docHeight > 0) setIframeHeight(docHeight)
+    setSectionRects(next)
+  }, [])
+
+  // iframe 로드 + scroll/resize 시 재측정. previewKey가 바뀌면 iframe 재로드되므로 다시 바인딩.
+  useEffect(() => {
+    const iframe = iframeRef.current
+    if (!iframe) return
+    let raf = 0
+    const schedule = () => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(measureSections)
+    }
+    const onLoad = () => {
+      schedule()
+      const win = iframe.contentWindow
+      const doc = iframe.contentDocument
+      if (!win || !doc) return
+      win.addEventListener('resize', schedule)
+      const ro = new ResizeObserver(schedule)
+      if (doc.body) ro.observe(doc.body)
+      // 이미지 등 늦게 로드되는 리소스 대응
+      doc.querySelectorAll('img').forEach((img) => {
+        if (!(img as HTMLImageElement).complete) {
+          img.addEventListener('load', schedule, { once: true })
+        }
+      })
+      // cleanup 저장
+      ;(iframe as unknown as { _cleanup?: () => void })._cleanup = () => {
+        win.removeEventListener('resize', schedule)
+        ro.disconnect()
+      }
+    }
+    iframe.addEventListener('load', onLoad)
+    // 이미 로드된 상태일 수도 있음
+    if (iframe.contentDocument?.readyState === 'complete') onLoad()
+    return () => {
+      iframe.removeEventListener('load', onLoad)
+      const c = (iframe as unknown as { _cleanup?: () => void })._cleanup
+      if (c) c()
+      cancelAnimationFrame(raf)
+    }
+  }, [measureSections, previewKey, viewMode])
+
+  // 섹션 라벨 도우미
+  const getSectionLabel = (s: LayoutSection): { type: string; name: string } => {
+    if (s.type === 'banner') return { type: '배너', name: (s as BannerSectionConfig).label || '배너' }
+    if (s.type === 'categories') return { type: '카테고리', name: (s as CategoriesSectionConfig).label || '카드 배너' }
+    if (s.type === 'featured') return { type: '메인상품추출', name: stripHtml((s as FeaturedSectionConfig).label) || '메인상품추출' }
+    if (s.type === 'cardBannerGroup') return { type: '카드배너 그룹', name: (s as CardBannerGroupConfig).label || '카드배너 그룹' }
+    if (s.type === 'divider') return { type: '가로선', name: '가로선' }
+    if (s.type === 'text') return { type: '텍스트', name: stripHtml((s as TextWidgetConfig).html) || '텍스트' }
+    if (s.type === 'spacer') return { type: '여백', name: `여백 ${(s as SpacerWidgetConfig).height ?? 40}px` }
+    if (s.type === 'board') {
+      const cfg = s as BoardSectionConfig
+      const name = stripHtml(cfg.label) || boards.find((b) => b.id === cfg.boardId)?.name || '게시판'
+      return { type: '게시판', name }
+    }
+    return { type: '브랜드', name: '브랜드' }
+  }
+
+  // 단순 위젯 편집 모달 (divider / text / spacer)
+  const [editingWidget, setEditingWidget] = useState<{
+    idx: number
+    type: 'divider' | 'text' | 'spacer'
+  } | null>(null)
+  const [widgetHtml, setWidgetHtml] = useState('')
+  const [widgetAlign, setWidgetAlign] = useState<'left' | 'center' | 'right'>('left')
+  const [widgetMarginY, setWidgetMarginY] = useState(16)
+  const [widgetThickness, setWidgetThickness] = useState(1)
+  const [widgetColor, setWidgetColor] = useState('#e4e4e7')
+  const [widgetStyle, setWidgetStyle] = useState<'solid' | 'dashed' | 'dotted' | 'double' | 'dashdot'>('solid')
+  const [widgetHeight, setWidgetHeight] = useState(40)
+
+  const openSectionEditor = (section: LayoutSection, idx: number) => {
+    if (section.type === 'banner') {
+      openBannerPicker(idx)
+    } else if (section.type === 'categories') {
+      const cfg = section as CategoriesSectionConfig
+      setCategoryCards(cfg.cards ?? [])
+      setCategoryLabel(cfg.label ?? '')
+      setCategorySubtitle(cfg.subtitle ?? '')
+      setEditingCategoryIndex(idx)
+    } else if (section.type === 'cardBannerGroup') {
+      const cfg = section as CardBannerGroupConfig
+      setCategoryCards(cfg.cards ?? [])
+      setEditingCardBannerIndex(idx)
+      setCardBannerLabel(cfg.label || '카드배너')
+      setCardBannerHeight(cfg.cardHeight ?? 100)
+    } else if (section.type === 'featured') {
+      const cfg = section as FeaturedSectionConfig
+      setEditingFeaturedIndex(idx)
+      setFeaturedLabel(cfg.label || '')
+      setFeaturedSubtitle(cfg.subtitle || '')
+      setFeaturedMoreAction(cfg.moreAction || 'link')
+      setFeaturedShowMore(cfg.showMoreButton ?? true)
+      setFeaturedDisplay(cfg.display || 'grid')
+      setFeaturedPerRow(cfg.perRow || 4)
+      setFeaturedRows(cfg.rows || 2)
+      setFeaturedAutoSeconds(cfg.autoSeconds || 0)
+      setShowCatPickerInModal(false)
+      setFeaturedTitleModal({ categoryId: cfg.categoryId || '', categoryName: cfg.label || '', isEdit: true })
+    } else if (section.type === 'divider') {
+      const cfg = section as DividerWidgetConfig
+      setWidgetThickness(cfg.thickness ?? 1)
+      setWidgetColor(cfg.color ?? '#e4e4e7')
+      setWidgetMarginY(cfg.marginY ?? 24)
+      setWidgetStyle(cfg.style ?? 'solid')
+      setEditingWidget({ idx, type: 'divider' })
+    } else if (section.type === 'text') {
+      const cfg = section as TextWidgetConfig
+      setWidgetHtml(cfg.html ?? '')
+      setWidgetAlign(cfg.align ?? 'left')
+      setWidgetMarginY(cfg.marginY ?? 16)
+      setEditingWidget({ idx, type: 'text' })
+    } else if (section.type === 'spacer') {
+      const cfg = section as SpacerWidgetConfig
+      setWidgetHeight(cfg.height ?? 40)
+      setEditingWidget({ idx, type: 'spacer' })
+    } else if (section.type === 'board') {
+      const cfg = section as BoardSectionConfig
+      setBoardWidgetBoardId(cfg.boardId ?? '')
+      setBoardWidgetLabel(cfg.label ?? '')
+      setBoardWidgetSubtitle(cfg.subtitle ?? '')
+      setBoardWidgetPerRow(cfg.perRow ?? 1)
+      setBoardWidgetRows(cfg.rows ?? 5)
+      setBoardWidgetShowMore(cfg.showMoreButton ?? true)
+      setBoardWidgetShowThumb(cfg.showThumbnail ?? true)
+      setBoardWidgetShowDate(cfg.showDate ?? true)
+      setEditingBoardIndex(idx)
+    }
+  }
+
+  const saveWidget = () => {
+    if (!editingWidget) return
+    const { idx, type } = editingWidget
+
+    let newSections: LayoutSection[]
+    if (idx === -1) {
+      // 신규 추가
+      const id = generateId()
+      let newSection: LayoutSection
+      if (type === 'divider') {
+        newSection = { id, type: 'divider', visible: true, thickness: widgetThickness, color: widgetColor, marginY: widgetMarginY, style: widgetStyle }
+      } else if (type === 'text') {
+        newSection = { id, type: 'text', visible: true, html: widgetHtml, align: widgetAlign, marginY: widgetMarginY }
+      } else {
+        newSection = { id, type: 'spacer', visible: true, height: widgetHeight }
+      }
+      newSections = [...sections, newSection]
+    } else {
+      newSections = sections.map((s, i) => {
+        if (i !== idx) return s
+        if (type === 'divider') {
+          return { ...s, thickness: widgetThickness, color: widgetColor, marginY: widgetMarginY, style: widgetStyle } as DividerWidgetConfig
+        }
+        if (type === 'text') {
+          return { ...s, html: widgetHtml, align: widgetAlign, marginY: widgetMarginY } as TextWidgetConfig
+        }
+        // spacer
+        return { ...s, height: widgetHeight } as SpacerWidgetConfig
+      })
+    }
+
+    setEditingWidget(null)
+    void saveAndRefresh(newSections)
+  }
+
+  // iframe 안 섹션 노드 찾기
+  const getIframeNode = (sectionId: string): HTMLElement | null => {
+    const doc = iframeRef.current?.contentDocument
+    if (!doc) return null
+    return doc.querySelector<HTMLElement>(`[data-section-id="${sectionId}"]`)
+  }
+
+  // 좌표 재측정을 다음 frame 에서 (DOM mutation 후 layout 안정화 대기)
+  const scheduleMeasure = () => {
+    requestAnimationFrame(() => requestAnimationFrame(measureSections))
+  }
+
+  // 순서 변경 — iframe DOM도 즉시 reorder 해서 시각적으로 바로 반영
+  const moveSection = (idx: number, dir: -1 | 1) => {
+    const target = idx + dir
+    if (target < 0 || target >= sections.length) return
+
+    const aId = sections[idx].id
+    const bId = sections[target].id
+    const aNode = getIframeNode(aId)
+    const bNode = getIframeNode(bId)
+    if (aNode && bNode && aNode.parentNode) {
+      // 두 노드를 placeholder 로 swap
+      const placeholder = aNode.ownerDocument.createComment('swap')
+      aNode.parentNode.insertBefore(placeholder, aNode)
+      bNode.parentNode!.insertBefore(aNode, bNode)
+      placeholder.parentNode!.insertBefore(bNode, placeholder)
+      placeholder.remove()
+    }
+
+    updateSections((prev) => {
+      const next = [...prev]
+      ;[next[idx], next[target]] = [next[target], next[idx]]
+      return next
+    })
+    scheduleMeasure()
+  }
+
+  // 표시/숨김 — iframe 안에서는 시각적으로 흐리게(opacity)만 변경
+  const toggleVisibility = (idx: number) => {
+    const id = sections[idx].id
+    updateSections((prev) =>
+      prev.map((s, i) => (i === idx ? { ...s, visible: !s.visible } : s)),
+    )
+    const node = getIframeNode(id)
+    if (node) {
+      // 토글된 다음 상태 기준으로 스타일 적용
+      const willBeVisible = !sections[idx].visible
+      node.style.opacity = willBeVisible ? '' : '0.35'
+      node.style.pointerEvents = willBeVisible ? '' : 'none'
+    }
+    scheduleMeasure()
+  }
+
+  // 삭제 — iframe DOM에서도 즉시 제거
+  const deleteSection = (idx: number) => {
+    if (!confirm('이 섹션을 삭제하시겠습니까?')) return
+    const id = sections[idx].id
+    const node = getIframeNode(id)
+    if (node) node.remove()
+    updateSections((prev) => prev.filter((_, i) => i !== idx))
+    scheduleMeasure()
+  }
+
 
   return (
     <div className="space-y-4">
@@ -238,247 +595,334 @@ export function LayoutManager({
         </div>
       )}
 
-      {/* 비주얼 프리뷰 */}
-      <div className="w-full">
-        <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
-          {/* 브라우저 탑바 */}
-          <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50 px-5 py-3">
-            <div className="flex gap-1.5">
-              <span className="h-3 w-3 rounded-full bg-red-400" />
-              <span className="h-3 w-3 rounded-full bg-yellow-400" />
-              <span className="h-3 w-3 rounded-full bg-green-400" />
-            </div>
-            <div className="ml-3 flex-1 rounded-md bg-white px-4 py-1.5 text-xs text-zinc-400">
-              https://yoursite.com
-            </div>
-          </div>
+      {/* PC / 모바일 미리보기 토글 */}
+      <div className="flex items-center justify-center">
+        <div className="inline-flex overflow-hidden rounded-lg border border-zinc-200 bg-white">
+          <button
+            type="button"
+            onClick={() => setViewMode('pc')}
+            className={`flex cursor-pointer items-center gap-1.5 px-4 py-2 text-sm font-medium transition ${
+              viewMode === 'pc' ? 'bg-zinc-900 text-white' : 'text-zinc-500 hover:bg-zinc-50'
+            }`}
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <rect x="3" y="4" width="18" height="12" rx="2" />
+              <path strokeLinecap="round" d="M8 20h8M12 16v4" />
+            </svg>
+            PC
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('mobile')}
+            className={`flex cursor-pointer items-center gap-1.5 px-4 py-2 text-sm font-medium transition ${
+              viewMode === 'mobile' ? 'bg-zinc-900 text-white' : 'text-zinc-500 hover:bg-zinc-50'
+            }`}
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <rect x="7" y="3" width="10" height="18" rx="2" />
+              <path strokeLinecap="round" d="M11 18h2" />
+            </svg>
+            모바일
+          </button>
+        </div>
+      </div>
 
-          {/* 헤더 프리뷰 */}
-          <div className="flex items-center justify-between border-b border-zinc-100 px-6 py-3">
-            <span className="text-sm font-bold tracking-wider text-zinc-900">
-              LOGO
-            </span>
-            <div className="flex gap-4">
-              {['메뉴1', '메뉴2', '메뉴3', '메뉴4'].map((m) => (
-                <span key={m} className="text-xs text-zinc-400">
-                  {m}
+      {/* 실제 페이지 + 오버레이 편집 영역 */}
+      <div className={`mx-auto transition-all ${viewMode === 'mobile' ? 'w-[420px]' : 'w-full'}`}>
+        <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-md">
+          <div className="flex items-center justify-between border-b border-zinc-100 bg-zinc-50 px-4 py-2">
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
+                <span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
+                <span className="h-2.5 w-2.5 rounded-full bg-green-400" />
+              </div>
+              <span className="ml-2 text-[11px] font-medium text-zinc-500">
+                미리보기 위에서 바로 편집 · {viewMode === 'mobile' ? '모바일 (420px)' : 'PC (전체 너비)'}
+              </span>
+              {saving && (
+                <span className="ml-2 flex items-center gap-1 text-[11px] text-blue-600">
+                  <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  저장 중…
                 </span>
-              ))}
+              )}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setPreviewKey((k) => k + 1)}
+                className="flex cursor-pointer items-center gap-1 rounded-md border border-zinc-300 bg-white px-2 py-0.5 text-[11px] text-zinc-600 hover:bg-zinc-50"
+                title="새로고침"
+              >
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                새로고침
+              </button>
+              <a
+                href="/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex cursor-pointer items-center gap-1 rounded-md border border-zinc-300 bg-white px-2 py-0.5 text-[11px] text-zinc-600 hover:bg-zinc-50"
+                title="새 탭에서 열기"
+              >
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                새 탭
+              </a>
             </div>
           </div>
 
-          {/* 섹션 목록 */}
-          <div className="min-h-[200px]">
-            {sections.map((section, idx) => {
-              const isBanner = section.type === 'banner'
-              const bannerCfg = isBanner
-                ? (section as BannerSectionConfig)
-                : null
-              const sectionBanners = bannerCfg
-                ? bannerCfg.bannerIds
-                    .map((id) => bannerMap.get(id))
-                    .filter((b): b is Banner => b != null)
-                : []
+          {/* iframe + 오버레이 */}
+          <div className="relative">
+            <iframe
+              ref={iframeRef}
+              key={previewKey}
+              src="/"
+              title="실제 페이지 미리보기"
+              className="block w-full"
+              style={{ height: `${iframeHeight}px`, border: 'none' }}
+              scrolling="no"
+            />
 
-              return (
-                <div
-                  key={section.id}
-                  draggable
-                  onDragStart={() => handleDragStart(idx)}
-                  onDragOver={(e) => handleDragOver(e, idx)}
-                  onDrop={() => handleDrop(idx)}
-                  onDragEnd={handleDragEnd}
-                  className={`group relative cursor-grab transition active:cursor-grabbing ${
-                    dragOverIndex === idx
-                      ? 'ring-2 ring-inset ring-blue-400'
-                      : ''
-                  } ${dragIndex === idx ? 'opacity-30' : ''} ${
-                    !section.visible ? 'opacity-40 grayscale' : ''
-                  }`}
-                >
-                  {/* 호버 시 컨트롤 오버레이 */}
-                  <div className="pointer-events-none absolute inset-0 z-10 border-2 border-transparent transition-colors group-hover:border-blue-400">
-                    {/* 상단 툴바 */}
-                    <div className="pointer-events-auto absolute -top-0.5 left-1/2 flex -translate-x-1/2 -translate-y-full items-center gap-1 rounded-t-lg bg-blue-500 px-2 py-1 opacity-0 shadow-sm transition group-hover:opacity-100">
-                      <span className="cursor-grab text-white" title="드래그하여 이동">
-                        <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M7 2a2 2 0 10.001 4.001A2 2 0 007 2zm0 6a2 2 0 10.001 4.001A2 2 0 007 8zm0 6a2 2 0 10.001 4.001A2 2 0 007 14zm6-8a2 2 0 10-.001-4.001A2 2 0 0013 6zm0 2a2 2 0 10.001 4.001A2 2 0 0013 8zm0 6a2 2 0 10.001 4.001A2 2 0 0013 14z" />
-                        </svg>
+            {/* 섹션 오버레이 — 저장된 페이지의 섹션 위에 컨트롤 표시 */}
+            <div className="pointer-events-none absolute inset-0">
+              {sections.map((section, idx) => {
+                const rect = sectionRects[section.id]
+                if (!rect) return null
+                const { type } = getSectionLabel(section)
+                const isHovered = hoveredSectionId === section.id
+                return (
+                  <div
+                    key={section.id}
+                    onMouseEnter={() => setHoveredSectionId(section.id)}
+                    onMouseLeave={() => setHoveredSectionId((curr) => (curr === section.id ? null : curr))}
+                    className={`pointer-events-auto absolute transition ${
+                      isHovered
+                        ? 'border-2 border-blue-500 bg-blue-500/5'
+                        : 'border-2 border-transparent hover:border-blue-300'
+                    } ${!section.visible ? 'bg-zinc-900/30' : ''}`}
+                    style={{
+                      top: rect.top,
+                      left: 0,
+                      width: '100%',
+                      height: rect.height,
+                    }}
+                  >
+                    {/* 좌상단 타입 뱃지 (항상 표시) */}
+                    <div className="absolute left-2 top-2 flex items-center gap-1">
+                      <span className="rounded bg-blue-500 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
+                        {type}
                       </span>
-                      <span className="text-[10px] font-medium text-white">
-                        {isBanner
-                          ? bannerCfg!.label
-                          : section.type === 'categories'
-                            ? '카드 배너'
-                            : section.type === 'featured'
-                              ? (stripHtml((section as FeaturedSectionConfig).label) || '메인상품추출')
-                              : section.type === 'cardBannerGroup'
-                                ? ((section as CardBannerGroupConfig).label || '카드배너 그룹')
-                                : '브랜드'}
-                      </span>
-                      {isBanner && (
-                        <button
-                          onClick={() => openBannerPicker(idx)}
-                          className="rounded bg-white/20 px-1.5 py-0.5 text-[9px] text-white hover:bg-white/30"
-                        >
-                          편집
-                        </button>
+                      {!section.visible && (
+                        <span className="rounded bg-zinc-700 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
+                          숨김
+                        </span>
                       )}
-                      {section.type === 'categories' && (
-                        <button
-                          onClick={() => {
-                            const cfg = section as CategoriesSectionConfig
-                            setCategoryCards(cfg.cards ?? [])
-                            setCategoryLabel(cfg.label ?? '')
-                            setCategorySubtitle(cfg.subtitle ?? '')
-                            setEditingCategoryIndex(idx)
-                          }}
-                          className="rounded bg-white/20 px-1.5 py-0.5 text-[9px] text-white hover:bg-white/30"
-                        >
-                          편집
-                        </button>
-                      )}
-                      {section.type === 'cardBannerGroup' && (
-                        <button
-                          onClick={() => {
-                            const cfg = section as CardBannerGroupConfig
-                            setCategoryCards(cfg.cards ?? [])
-                            setEditingCardBannerIndex(idx)
-                            setCardBannerLabel(cfg.label || '카드배너')
-                            setCardBannerHeight(cfg.cardHeight ?? 100)
-                          }}
-                          className="rounded bg-white/20 px-1.5 py-0.5 text-[9px] text-white hover:bg-white/30"
-                        >
-                          편집
-                        </button>
-                      )}
-                      {section.type === 'featured' && (
-                        <button
-                          onClick={() => {
-                            const cfg = section as FeaturedSectionConfig
-                            setEditingFeaturedIndex(idx)
-                            setFeaturedLabel(cfg.label || '')
-                            setFeaturedSubtitle(cfg.subtitle || '')
-                            setFeaturedMoreAction(cfg.moreAction || 'link')
-                            setFeaturedDisplay(cfg.display || 'grid')
-                            setFeaturedPerRow(cfg.perRow || 4)
-                            setFeaturedRows(cfg.rows || 2)
-                            setFeaturedAutoSeconds(cfg.autoSeconds || 0)
-                            setShowCatPickerInModal(false)
-                            setFeaturedTitleModal({ categoryId: cfg.categoryId || '', categoryName: cfg.label || '', isEdit: true })
-                          }}
-                          className="rounded bg-white/20 px-1.5 py-0.5 text-[9px] text-white hover:bg-white/30"
-                        >
-                          편집
-                        </button>
-                      )}
+                    </div>
+
+                    {/* 우상단 컨트롤 (호버 시 표시) */}
+                    <div className={`absolute right-2 top-2 flex items-center gap-1 rounded-lg bg-white px-1 py-1 shadow-md ring-1 ring-zinc-200 transition ${
+                      isHovered ? 'opacity-100' : 'opacity-0'
+                    }`}>
                       <button
+                        type="button"
+                        onClick={() => moveSection(idx, -1)}
+                        disabled={idx === 0}
+                        className="cursor-pointer rounded p-1 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 disabled:cursor-not-allowed disabled:opacity-30"
+                        title="위로"
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveSection(idx, 1)}
+                        disabled={idx === sections.length - 1}
+                        className="cursor-pointer rounded p-1 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 disabled:cursor-not-allowed disabled:opacity-30"
+                        title="아래로"
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                      <span className="mx-0.5 h-4 w-px bg-zinc-200" />
+                      <button
+                        type="button"
+                        onClick={() => openSectionEditor(section, idx)}
+                        className="flex cursor-pointer items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-blue-600 hover:bg-blue-50"
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                        편집
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => toggleVisibility(idx)}
-                        className="rounded bg-white/20 p-0.5 text-white hover:bg-white/30"
+                        className="cursor-pointer rounded p-1 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800"
                         title={section.visible ? '숨기기' : '표시'}
                       >
                         {section.visible ? (
-                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                             <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                           </svg>
                         ) : (
-                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
                           </svg>
                         )}
                       </button>
                       <button
+                        type="button"
                         onClick={() => deleteSection(idx)}
-                        className="rounded bg-white/20 p-0.5 text-white hover:bg-red-400"
+                        className="cursor-pointer rounded p-1 text-red-400 hover:bg-red-50 hover:text-red-600"
                         title="삭제"
                       >
-                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
                       </button>
                     </div>
                   </div>
+                )
+              })}
 
-                  {/* 섹션 비주얼 프리뷰 */}
-                  <SectionPreview
-                    section={section}
-                    banners={sectionBanners}
-                    bannerCfg={bannerCfg}
-                    onBannerEdit={() => openBannerPicker(idx)}
-                  />
+              {sections.length === 0 && (
+                <div className="pointer-events-auto absolute inset-0 flex items-center justify-center bg-zinc-50/90 text-sm text-zinc-400">
+                  우하단 「위젯 추가」 버튼으로 레이아웃을 구성하세요
                 </div>
-              )
-            })}
-
-            {sections.length === 0 && (
-              <div className="flex h-40 items-center justify-center text-sm text-zinc-400">
-                섹션을 추가하여 레이아웃을 구성하세요
-              </div>
-            )}
-          </div>
-
-          {/* 푸터 프리뷰 */}
-          <div className="border-t border-zinc-100 bg-zinc-900 px-6 py-5 text-center">
-            <span className="text-xs text-zinc-500">FOOTER</span>
+              )}
+            </div>
           </div>
         </div>
+        <p className="mt-2 text-center text-[11px] text-zinc-400">
+          미리보기는 저장된 상태입니다 · 변경 후 「저장」을 누르면 적용됩니다
+        </p>
       </div>
 
-      {/* 섹션 추가 버튼 */}
-      <div className="relative flex justify-center">
-        <button
-          onClick={() => setShowAddMenu(!showAddMenu)}
-          className="flex items-center gap-2 rounded-lg border border-dashed border-zinc-300 px-5 py-2.5 text-sm text-zinc-500 transition hover:border-zinc-400 hover:text-zinc-700"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          섹션 추가
-        </button>
 
-        {showAddMenu && (
-          <div className="absolute top-full z-20 mt-2 w-52 rounded-xl border border-zinc-200 bg-white py-1 shadow-lg">
-            <button
-              onClick={() => addSection('banner')}
-              className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
-            >
-              <svg className="h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
-              </svg>
-              배너
-            </button>
-            <button
-              onClick={() => addSection('featured')}
-              className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
-            >
-              <svg className="h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007zM8.625 10.5a.375.375 0 11-.75 0 .375.375 0 01.75 0zm7.5 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
-              </svg>
-              메인상품추출
-            </button>
-            <button
-              onClick={() => addSection('cardBannerGroup')}
-              className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
-            >
-              <svg className="h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25h2.25A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25h-2.25a2.25 2.25 0 01-2.25-2.25v-2.25z" />
-              </svg>
-              카드배너 그룹
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* 저장 버튼 */}
-      <div className="flex justify-end">
+      {/* 우하단 플로팅 — 저장 + 위젯 추가 */}
+      <div className="fixed bottom-6 right-6 z-40 flex items-center gap-3">
         <button
+          type="button"
           onClick={handleSave}
-          disabled={saving}
-          className="rounded-lg bg-zinc-900 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-50"
+          disabled={saving || !dirty}
+          className={`flex h-12 cursor-pointer items-center gap-2 rounded-full px-5 text-sm font-semibold shadow-lg ring-1 transition disabled:cursor-not-allowed ${
+            dirty
+              ? 'bg-blue-600 text-white ring-blue-600/20 hover:bg-blue-700 hover:scale-105'
+              : 'bg-white text-zinc-400 ring-zinc-200'
+          } ${saving ? 'opacity-70' : ''}`}
         >
-          {saving ? '저장 중...' : '레이아웃 저장'}
+          {saving ? (
+            <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          ) : (
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          )}
+          {saving ? '저장 중…' : dirty ? '변경사항 저장' : '저장됨'}
         </button>
+        <div className="relative">
+        {showAddMenu && (
+          <>
+            {/* 메뉴 바깥 클릭 시 닫힘 */}
+            <div
+              className="fixed inset-0 z-0"
+              onClick={() => setShowAddMenu(false)}
+            />
+            <div className="absolute bottom-full right-0 z-10 mb-3 w-60 overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-xl">
+              <div className="px-3 pb-1.5 pt-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                위젯 추가
+              </div>
+              <button
+                onClick={() => addSection('banner')}
+                className="flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
+              >
+                <svg className="h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
+                </svg>
+                배너
+              </button>
+              <button
+                onClick={() => addSection('featured')}
+                className="flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
+              >
+                <svg className="h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007zM8.625 10.5a.375.375 0 11-.75 0 .375.375 0 01.75 0zm7.5 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+                </svg>
+                메인상품추출
+              </button>
+              <button
+                onClick={() => addSection('cardBannerGroup')}
+                className="flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
+              >
+                <svg className="h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25h2.25A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25h-2.25a2.25 2.25 0 01-2.25-2.25v-2.25z" />
+                </svg>
+                카드배너 그룹
+              </button>
+              <button
+                onClick={() => addSection('board')}
+                className="flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
+              >
+                <svg className="h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9h6m-6 4h6" />
+                </svg>
+                게시판
+              </button>
+              <div className="my-1 border-t border-zinc-100" />
+              <button
+                onClick={() => addSection('text')}
+                className="flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
+              >
+                <svg className="h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h10M4 18h16" />
+                </svg>
+                텍스트
+              </button>
+              <button
+                onClick={() => addSection('divider')}
+                className="flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
+              >
+                <svg className="h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 12h16" />
+                </svg>
+                가로선
+              </button>
+              <button
+                onClick={() => addSection('spacer')}
+                className="flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
+              >
+                <svg className="h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v4M12 16v4M4 12h4M16 12h4" />
+                </svg>
+                여백
+              </button>
+            </div>
+          </>
+        )}
+        <button
+          type="button"
+          onClick={() => setShowAddMenu((v) => !v)}
+          className={`relative z-10 flex h-14 w-14 cursor-pointer items-center justify-center rounded-full bg-zinc-900 text-white shadow-lg ring-1 ring-zinc-900/10 transition hover:scale-105 hover:bg-zinc-800 ${
+            showAddMenu ? 'rotate-45' : ''
+          }`}
+          title="위젯 추가"
+          aria-label="위젯 추가"
+        >
+          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
+        </div>
       </div>
 
       {/* 배너 선택 모달 */}
@@ -516,6 +960,156 @@ export function LayoutManager({
                 className="w-full rounded-lg border border-zinc-300 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
               >
                 취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 게시판 선택 모달 (게시판 위젯 추가 시) */}
+      {showBoardPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 max-h-[70vh] w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-zinc-100 px-6 py-4">
+              <h3 className="text-lg font-semibold text-zinc-900">게시판 선택</h3>
+              <p className="mt-1 text-sm text-zinc-500">메인에 추출할 게시판을 선택하세요</p>
+            </div>
+            <div className="max-h-[50vh] overflow-y-auto p-3">
+              {boards.length === 0 ? (
+                <div className="py-8 text-center text-sm text-zinc-400">
+                  먼저 게시판을 등록하세요 (관리자 → 게시판 관리)
+                </div>
+              ) : (
+                <ul className="space-y-1">
+                  {boards.map((b) => (
+                    <li key={b.id}>
+                      <button
+                        type="button"
+                        onClick={() => addBoardWidget(b.id, b.name)}
+                        className="flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2.5 text-left hover:bg-zinc-50"
+                      >
+                        <span className="text-sm font-medium text-zinc-900">{b.name}</span>
+                        <span className="text-xs text-zinc-400">/{b.slug}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="border-t border-zinc-100 px-6 py-3">
+              <button
+                onClick={() => setShowBoardPicker(false)}
+                className="w-full cursor-pointer rounded-lg border border-zinc-300 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 게시판 위젯 편집 모달 */}
+      {editingBoardIndex !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 max-h-[85vh] w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-zinc-100 px-6 py-4">
+              <h3 className="text-lg font-semibold text-zinc-900">
+                {editingBoardIndex === -1 ? '게시판 위젯 추가' : '게시판 위젯 편집'}
+              </h3>
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto space-y-4 p-5">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-600">게시판</label>
+                <select
+                  value={boardWidgetBoardId}
+                  onChange={(e) => setBoardWidgetBoardId(e.target.value)}
+                  className="w-full cursor-pointer rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                >
+                  {boards.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-600">제목</label>
+                <div className="rounded-lg border border-zinc-300">
+                  <InlineEditor value={boardWidgetLabel} onChange={setBoardWidgetLabel} />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-600">부제 (선택)</label>
+                <div className="rounded-lg border border-zinc-300">
+                  <InlineEditor value={boardWidgetSubtitle} onChange={setBoardWidgetSubtitle} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600">한 줄에 (개)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={8}
+                    value={boardWidgetPerRow}
+                    onChange={(e) => setBoardWidgetPerRow(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600">줄 수</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={boardWidgetRows}
+                    onChange={(e) => setBoardWidgetRows(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <p className="col-span-2 -mt-1 text-[11px] text-zinc-400">
+                  총 {Math.max(1, boardWidgetPerRow) * Math.max(1, boardWidgetRows)}개 노출 ·{' '}
+                  {boardWidgetPerRow > 1 ? '그리드' : '리스트'} 형식
+                </p>
+              </div>
+              <div className="space-y-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5">
+                {[
+                  { key: 'more', label: '더보기 버튼 표시', state: boardWidgetShowMore, set: setBoardWidgetShowMore },
+                  { key: 'thumb', label: '썸네일 표시', state: boardWidgetShowThumb, set: setBoardWidgetShowThumb },
+                  { key: 'date', label: '작성일 표시', state: boardWidgetShowDate, set: setBoardWidgetShowDate },
+                ].map((opt) => (
+                  <label key={opt.key} className="flex cursor-pointer items-center justify-between gap-2 text-sm text-zinc-700">
+                    <span>{opt.label}</span>
+                    <button
+                      type="button"
+                      onClick={() => opt.set(!opt.state)}
+                      className={`relative inline-flex h-5 w-9 cursor-pointer items-center rounded-full transition ${
+                        opt.state ? 'bg-zinc-900' : 'bg-zinc-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition ${
+                          opt.state ? 'translate-x-4' : 'translate-x-0.5'
+                        }`}
+                      />
+                    </button>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2 border-t border-zinc-100 bg-zinc-50 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setEditingBoardIndex(null)}
+                className="flex-1 cursor-pointer rounded-lg border border-zinc-300 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                disabled={!boardWidgetBoardId}
+                onClick={confirmBoardWidget}
+                className="flex-1 cursor-pointer rounded-lg bg-zinc-900 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+              >
+                저장
               </button>
             </div>
           </div>
@@ -650,6 +1244,31 @@ export function LayoutManager({
                   </p>
                 </div>
               )}
+              <div className="flex items-center gap-3 rounded-lg border border-zinc-200 p-3">
+                <button
+                  type="button"
+                  onClick={() => setFeaturedShowMore(!featuredShowMore)}
+                  className={`relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors ${
+                    featuredShowMore ? 'bg-zinc-900' : 'bg-zinc-300'
+                  }`}
+                  aria-label="더보기 버튼 표시"
+                >
+                  <span
+                    className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                      featuredShowMore ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+                <div>
+                  <p className="text-sm font-medium text-zinc-900">&apos;더보기&apos; 버튼 표시</p>
+                  <p className="text-xs text-zinc-400">
+                    {featuredShowMore
+                      ? '메인에 더보기 버튼이 표시됩니다.'
+                      : '꺼두면 더보기 버튼이 표시되지 않습니다.'}
+                  </p>
+                </div>
+              </div>
+
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">&apos;더보기&apos; 버튼 동작</label>
                 <div className="grid grid-cols-2 gap-2">
@@ -813,12 +1432,13 @@ export function LayoutManager({
               <button
                 disabled={uploadingCardImage}
                 onClick={() => {
-                  setSections(prev => prev.map((s, i) =>
+                  const newSections = sections.map((s, i) =>
                     i === editingCategoryIndex
                       ? { ...s, cards: categoryCards, label: categoryLabel, subtitle: categorySubtitle } as CategoriesSectionConfig
                       : s
-                  ))
+                  )
                   setEditingCategoryIndex(null)
+                  void saveAndRefresh(newSections)
                 }}
                 className="flex-1 rounded-lg bg-zinc-900 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
               >
@@ -941,12 +1561,27 @@ export function LayoutManager({
               <button
                 disabled={uploadingCardImage}
                 onClick={() => {
-                  setSections(prev => prev.map((s, i) =>
-                    i === editingCardBannerIndex
-                      ? { ...s, label: cardBannerLabel, cards: categoryCards, cardHeight: cardBannerHeight } as CardBannerGroupConfig
-                      : s
-                  ))
+                  let newSections: LayoutSection[]
+                  if (editingCardBannerIndex === -1) {
+                    // 새로 추가
+                    const newSection: CardBannerGroupConfig = {
+                      id: generateId(),
+                      type: 'cardBannerGroup',
+                      visible: true,
+                      label: cardBannerLabel,
+                      cards: categoryCards,
+                      cardHeight: cardBannerHeight,
+                    }
+                    newSections = [...sections, newSection]
+                  } else {
+                    newSections = sections.map((s, i) =>
+                      i === editingCardBannerIndex
+                        ? { ...s, label: cardBannerLabel, cards: categoryCards, cardHeight: cardBannerHeight } as CardBannerGroupConfig
+                        : s
+                    )
+                  }
                   setEditingCardBannerIndex(null)
+                  void saveAndRefresh(newSections)
                 }}
                 className="flex-1 rounded-lg bg-zinc-900 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
               >
@@ -956,226 +1591,215 @@ export function LayoutManager({
           </div>
         </div>
       )}
-    </div>
-  )
-}
 
-/* ── 섹션별 미니 프리뷰 ── */
+      {/* 단순 위젯 편집 모달 (가로선 / 텍스트 / 여백) */}
+      {editingWidget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 max-h-[85vh] w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-zinc-100 px-6 py-4">
+              <h3 className="text-lg font-semibold text-zinc-900">
+                {editingWidget.type === 'divider' && (editingWidget.idx === -1 ? '가로선 추가' : '가로선 편집')}
+                {editingWidget.type === 'text' && (editingWidget.idx === -1 ? '텍스트 추가' : '텍스트 편집')}
+                {editingWidget.type === 'spacer' && (editingWidget.idx === -1 ? '여백 추가' : '여백 편집')}
+              </h3>
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto p-5 space-y-4">
+              {editingWidget.type === 'divider' && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-zinc-600">두께(px)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={widgetThickness}
+                        onChange={(e) => setWidgetThickness(parseInt(e.target.value) || 1)}
+                        className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-zinc-600">상하 여백(px)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={200}
+                        value={widgetMarginY}
+                        onChange={(e) => setWidgetMarginY(parseInt(e.target.value) || 0)}
+                        className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600">선 색상</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={widgetColor}
+                        onChange={(e) => setWidgetColor(e.target.value)}
+                        className="h-9 w-12 cursor-pointer rounded border border-zinc-300"
+                      />
+                      <input
+                        type="text"
+                        value={widgetColor}
+                        onChange={(e) => setWidgetColor(e.target.value)}
+                        className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-mono"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600">선 종류</label>
+                    <div className="grid grid-cols-5 gap-2">
+                      {(['solid', 'dashed', 'dotted', 'double', 'dashdot'] as const).map((s) => {
+                        const label =
+                          s === 'solid' ? '실선'
+                          : s === 'dashed' ? '대시'
+                          : s === 'dotted' ? '점선'
+                          : s === 'double' ? '이중선'
+                          : '대시-점'
+                        const selected = widgetStyle === s
+                        const swatchColor = selected ? '#ffffff' : '#52525b'
+                        return (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => setWidgetStyle(s)}
+                            className={`flex cursor-pointer flex-col items-center gap-1.5 rounded-lg border px-1.5 py-2.5 text-[11px] transition ${
+                              selected
+                                ? 'border-zinc-900 bg-zinc-900 text-white'
+                                : 'border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50'
+                            }`}
+                            title={label}
+                          >
+                            <div className="h-3 w-full">
+                              {s === 'dashdot' ? (
+                                <div
+                                  style={{
+                                    height: 2,
+                                    marginTop: 4,
+                                    backgroundImage: `repeating-linear-gradient(to right, ${swatchColor} 0 8px, transparent 8px 11px, ${swatchColor} 11px 13px, transparent 13px 16px)`,
+                                  }}
+                                />
+                              ) : (
+                                <div
+                                  style={{
+                                    borderTop: `${s === 'double' ? 3 : 2}px ${s} ${swatchColor}`,
+                                    marginTop: 4,
+                                  }}
+                                />
+                              )}
+                            </div>
+                            <span>{label}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3">
+                    <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-zinc-400">미리보기</div>
+                    <div style={{ paddingTop: widgetMarginY, paddingBottom: widgetMarginY }}>
+                      {widgetStyle === 'dashdot' ? (
+                        <div
+                          style={{
+                            height: widgetThickness,
+                            backgroundImage: `repeating-linear-gradient(to right, ${widgetColor} 0 10px, transparent 10px 14px, ${widgetColor} 14px 16px, transparent 16px 20px)`,
+                          }}
+                        />
+                      ) : (
+                        <hr style={{ border: 'none', borderTop: `${widgetThickness}px ${widgetStyle} ${widgetColor}`, margin: 0 }} />
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
 
-function SectionPreview({
-  section,
-  banners,
-  bannerCfg,
-  onBannerEdit,
-}: {
-  section: LayoutSection
-  banners: Banner[]
-  bannerCfg: BannerSectionConfig | null
-  onBannerEdit: () => void
-}) {
-  switch (section.type) {
-    case 'banner':
-      return (
-        <BannerPreview
-          banners={banners}
-          config={bannerCfg!}
-          onEdit={onBannerEdit}
-        />
-      )
-    case 'categories':
-      return <CategoriesPreview />
-    case 'cardBannerGroup':
-      return <CardBannerGroupPreview label={(section as CardBannerGroupConfig).label} cards={(section as CardBannerGroupConfig).cards} />
-    case 'featured':
-      return <FeaturedPreview label={(section as FeaturedSectionConfig).label} />
-    case 'brands':
-      return <BrandsPreview />
-    default:
-      return null
-  }
-}
+              {editingWidget.type === 'text' && (
+                <>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600">내용</label>
+                    <div className="rounded-lg border border-zinc-300">
+                      <InlineEditor value={widgetHtml} onChange={setWidgetHtml} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-zinc-600">정렬</label>
+                      <div className="inline-flex w-full overflow-hidden rounded-lg border border-zinc-300">
+                        {(['left', 'center', 'right'] as const).map((a) => (
+                          <button
+                            key={a}
+                            type="button"
+                            onClick={() => setWidgetAlign(a)}
+                            className={`flex-1 cursor-pointer py-2 text-xs font-medium ${
+                              widgetAlign === a ? 'bg-zinc-900 text-white' : 'bg-white text-zinc-600 hover:bg-zinc-50'
+                            }`}
+                          >
+                            {a === 'left' ? '왼쪽' : a === 'center' ? '가운데' : '오른쪽'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-zinc-600">상하 여백(px)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={200}
+                        value={widgetMarginY}
+                        onChange={(e) => setWidgetMarginY(parseInt(e.target.value) || 0)}
+                        className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
 
-function BannerPreview({
-  banners,
-  config,
-  onEdit,
-}: {
-  banners: Banner[]
-  config: BannerSectionConfig
-  onEdit: () => void
-}) {
-  if (banners.length === 0) {
-    return (
-      <div
-        className="flex h-52 cursor-pointer items-center justify-center bg-zinc-800"
-        onClick={onEdit}
-      >
-        <div className="text-center">
-          <svg
-            className="mx-auto mb-2 h-8 w-8 text-zinc-500"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-            />
-          </svg>
-          <p className="text-xs text-zinc-500">클릭하여 배너 선택</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (config.display === 'grid') {
-    return (
-      <div className="grid grid-cols-2 gap-px bg-zinc-200">
-        {banners.slice(0, 4).map((b) => (
-          <div key={b.id} className="relative aspect-[16/7] overflow-hidden">
-            <Image src={b.image_url} alt={b.title || ''} fill className="object-cover" />
+              {editingWidget.type === 'spacer' && (
+                <>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600">높이(px)</label>
+                    <input
+                      type="number"
+                      min={4}
+                      max={400}
+                      value={widgetHeight}
+                      onChange={(e) => setWidgetHeight(parseInt(e.target.value) || 4)}
+                      className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3">
+                    <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-zinc-400">미리보기</div>
+                    <div className="rounded bg-blue-100" style={{ height: widgetHeight }} />
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="flex gap-2 border-t border-zinc-100 bg-zinc-50 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setEditingWidget(null)}
+                className="flex-1 cursor-pointer rounded-lg border border-zinc-300 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={saveWidget}
+                className="flex-1 cursor-pointer rounded-lg bg-zinc-900 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+              >
+                저장
+              </button>
+            </div>
           </div>
-        ))}
-      </div>
-    )
-  }
-
-  // carousel
-  const first = banners[0]
-  return (
-    <div className="relative h-52 overflow-hidden">
-      <Image src={first.image_url} alt={first.title || ''} fill className="object-cover" />
-      {(first.title || first.subtitle) && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 text-center text-white">
-          {first.title && (
-            <p className="text-lg font-bold">{first.title}</p>
-          )}
-          {first.subtitle && (
-            <p className="mt-1 text-xs text-white/70">{first.subtitle}</p>
-          )}
         </div>
       )}
-      {banners.length > 1 && (
-        <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 gap-1.5">
-          {banners.map((_, i) => (
-            <span
-              key={i}
-              className={`h-1.5 rounded-full ${i === 0 ? 'w-4 bg-white' : 'w-1.5 bg-white/50'}`}
-            />
-          ))}
-        </div>
-      )}
     </div>
   )
 }
 
-function CategoriesPreview() {
-  const cats = [
-    { name: '가방', color: 'bg-amber-100' },
-    { name: '시계', color: 'bg-slate-100' },
-    { name: '지갑', color: 'bg-rose-100' },
-    { name: '신발', color: 'bg-emerald-100' },
-    { name: '의류', color: 'bg-sky-100' },
-    { name: '액세서리', color: 'bg-violet-100' },
-  ]
-
-  return (
-    <div className="px-8 py-8">
-      <p className="mb-4 text-center text-sm font-bold text-zinc-700">
-        카드 배너
-      </p>
-      <div className="grid grid-cols-6 gap-3">
-        {cats.map((c) => (
-          <div
-            key={c.name}
-            className={`flex h-14 items-center justify-center rounded-lg ${c.color}`}
-          >
-            <span className="text-xs font-medium text-zinc-600">
-              {c.name}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// 미리보기용: 라벨에 HTML이 들어있어도 태그를 벗겨 텍스트만 표시
+// 라벨에 HTML이 들어있어도 태그를 벗겨 텍스트만 표시
 function stripHtml(s?: string) {
   return (s || '').replace(/<[^>]*>/g, '').trim()
-}
-
-function FeaturedPreview({ label }: { label?: string }) {
-  return (
-    <div className="bg-zinc-50 px-8 py-8">
-      <p className="mb-4 text-center text-sm font-bold text-zinc-700">
-        {stripHtml(label) || '메인상품추출'}
-      </p>
-      <div className="grid grid-cols-4 gap-3">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="overflow-hidden rounded-lg bg-white shadow-sm">
-            <div className="flex h-20 items-center justify-center bg-zinc-100">
-              <span className="text-[10px] text-zinc-300">IMG</span>
-            </div>
-            <div className="space-y-1 px-3 py-2">
-              <div className="h-1.5 w-10 rounded-full bg-zinc-200" />
-              <div className="h-1.5 w-16 rounded-full bg-zinc-100" />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function CardBannerGroupPreview({ label, cards }: { label: string; cards: CategoryCard[] }) {
-  return (
-    <div className="px-8 py-8">
-      <p className="mb-4 text-center text-sm font-bold text-zinc-700">{label || '카드배너'}</p>
-      <div className="grid grid-cols-4 gap-3">
-        {cards.length > 0 ? cards.slice(0, 4).map((card) => (
-          <div key={card.id} className="relative flex h-14 items-center justify-center overflow-hidden rounded-lg bg-zinc-100">
-            {card.image ? (
-              <>
-                <img src={card.image} alt={card.text} className="absolute inset-0 h-full w-full object-cover" />
-                <div className="absolute inset-0 bg-black/30" />
-                <span className="relative text-[10px] font-medium text-white">{card.text}</span>
-              </>
-            ) : (
-              <span className="text-[10px] font-medium text-zinc-500">{card.text || '카드'}</span>
-            )}
-          </div>
-        )) : (
-          Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="flex h-14 items-center justify-center rounded-lg bg-zinc-100">
-              <span className="text-[10px] text-zinc-400">카드 {i + 1}</span>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  )
-}
-
-function BrandsPreview() {
-  const brands = ['GUCCI', 'LOUIS VUITTON', 'CHANEL', 'HERMES', 'DIOR', 'PRADA']
-
-  return (
-    <div className="px-8 py-8">
-      <p className="mb-4 text-center text-sm font-bold text-zinc-700">
-        취급 브랜드
-      </p>
-      <div className="flex flex-wrap items-center justify-center gap-6">
-        {brands.map((b) => (
-          <span key={b} className="text-xs font-medium tracking-wider text-zinc-400">
-            {b}
-          </span>
-        ))}
-      </div>
-    </div>
-  )
 }
 
 /* ── 카테고리 트리 피커 (접기/펼치기) ── */
