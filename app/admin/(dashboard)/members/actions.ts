@@ -9,7 +9,19 @@ export type Member = {
   name: string | null
   role: string
   points: number
+  gender: 'male' | 'female' | 'other' | null
+  phone: string | null
+  homepage: string | null
+  address: string | null
+  zipcode: string | null
+  address_detail: string | null
+  birthdate: string | null
+  referrer: string | null
+  memo: string | null
   created_at: string
+  // 집계
+  total_purchased: number
+  post_count: number
 }
 
 export type PointHistoryEntry = {
@@ -22,12 +34,12 @@ export type PointHistoryEntry = {
   created_at: string
 }
 
-export async function getMembers(search?: string) {
+export async function getMembers(search?: string): Promise<Member[]> {
   const supabase = await createClient()
 
   let query = supabase
     .from('profiles')
-    .select('id, email, name, role, points, created_at')
+    .select('id, email, name, role, points, gender, phone, homepage, address, zipcode, address_detail, birthdate, referrer, memo, created_at')
     .order('created_at', { ascending: false })
 
   if (search?.trim()) {
@@ -35,7 +47,50 @@ export async function getMembers(search?: string) {
   }
 
   const { data } = await query
-  return (data ?? []) as Member[]
+  const rows = (data ?? []) as Omit<Member, 'total_purchased' | 'post_count'>[]
+  if (rows.length === 0) return []
+
+  const ids = rows.map((r) => r.id)
+
+  // 누적 구매금액: 결제완료(취소 아님)인 주문 합계
+  const { data: orderRows } = await supabase
+    .from('orders')
+    .select('user_id, total_amount, status')
+    .in('user_id', ids)
+    .neq('status', 'cancelled')
+
+  const totalByUser = new Map<string, number>()
+  for (const o of (orderRows ?? []) as { user_id: string; total_amount: number }[]) {
+    totalByUser.set(o.user_id, (totalByUser.get(o.user_id) ?? 0) + (o.total_amount ?? 0))
+  }
+
+  // 글 수: board_posts.user_id 카운트
+  const { data: postRows } = await supabase
+    .from('board_posts')
+    .select('user_id')
+    .in('user_id', ids)
+
+  const postByUser = new Map<string, number>()
+  for (const p of (postRows ?? []) as { user_id: string }[]) {
+    postByUser.set(p.user_id, (postByUser.get(p.user_id) ?? 0) + 1)
+  }
+
+  return rows.map((r) => ({
+    ...r,
+    total_purchased: totalByUser.get(r.id) ?? 0,
+    post_count: postByUser.get(r.id) ?? 0,
+  }))
+}
+
+export async function updateMemberMemo(id: string, memo: string) {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('profiles')
+    .update({ memo: memo.trim() || null })
+    .eq('id', id)
+  if (error) return { error: '메모 저장 중 오류가 발생했습니다.' }
+  revalidatePath('/admin/members')
+  return { success: true }
 }
 
 /**

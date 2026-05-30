@@ -39,16 +39,7 @@ const DELIVERY_MEMO_OPTIONS: { value: DeliveryMemo; label: string }[] = [
   { value: 'custom', label: '직접 입력' },
 ]
 
-// Daum Postcode 전역 타입
-declare global {
-  interface Window {
-    daum?: {
-      Postcode: new (opts: {
-        oncomplete: (data: { zonecode: string; address: string; roadAddress: string; jibunAddress: string }) => void
-      }) => { open: () => void }
-    }
-  }
-}
+// Daum Postcode 전역 타입은 components/address-search-button.tsx에서 선언
 
 export function CheckoutForm({
   source,

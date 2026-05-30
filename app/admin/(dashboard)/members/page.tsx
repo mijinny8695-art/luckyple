@@ -1,5 +1,8 @@
 import { getMembers } from './actions'
+import { getMemberSettings } from './settings/config'
 import { MembersTable } from './members-table'
+import { getAdminSiteId } from '@/lib/admin-site'
+import { getSites } from '@/app/admin/(dashboard)/settings/actions'
 
 export const metadata = { title: '회원 관리' }
 
@@ -11,14 +14,13 @@ export default async function MembersPage({
   const params = await searchParams
   const search = params.search ?? ''
   const members = await getMembers(search)
+  const sites = await getSites()
+  const currentSiteId = await getAdminSiteId(sites)
+  const currentSite = sites.find((s) => s.id === currentSiteId) ?? sites[0]
+  const memberSettings = currentSite ? getMemberSettings(currentSite) : null
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-zinc-900">회원 관리</h1>
-        <p className="mt-1 text-sm text-zinc-500">총 {members.length}명</p>
-      </div>
-
       {/* 검색 */}
       <div className="mb-4 rounded-xl bg-white p-4 shadow-sm">
         <form method="GET" action="/admin/members" className="flex gap-3">
@@ -46,7 +48,7 @@ export default async function MembersPage({
         </form>
       </div>
 
-      <MembersTable members={members} />
+      <MembersTable members={members} settings={memberSettings} />
     </div>
   )
 }
