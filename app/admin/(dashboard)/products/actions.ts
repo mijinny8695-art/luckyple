@@ -100,6 +100,7 @@ export async function getProducts(filter?: ProductsFilter): Promise<ProductsResu
 
   const { data: products, count, error } = await query
     .order('product_no', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
     .range(from, to)
 
   if (error || !products) return { products: [], total: 0, page, size }
@@ -215,6 +216,15 @@ export async function createProduct(formData: FormData) {
     slug = `${slug}-${existing.length + 1}`
   }
 
+  // 다음 product_no = 현재 최댓값 + 1 (정렬상 맨 위로 노출되도록)
+  const { data: maxRow } = await supabase
+    .from('products')
+    .select('product_no')
+    .order('product_no', { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle()
+  const nextProductNo = ((maxRow?.product_no as number | null) ?? 0) + 1
+
   const { data: product, error } = await supabase
     .from('products')
     .insert({
@@ -228,6 +238,7 @@ export async function createProduct(formData: FormData) {
       category_nos: categoryNos,
       status,
       is_active: isActive,
+      product_no: nextProductNo,
     })
     .select('id')
     .single()
@@ -446,6 +457,15 @@ export async function duplicateProduct(id: string) {
     slug = `${baseSlug}-${existing.length + 1}`
   }
 
+  // 복제본은 항상 맨 위(현재 최댓값 + 1)에 노출 — 다른 상품 product_no는 건드리지 않음
+  const { data: maxRow } = await supabase
+    .from('products')
+    .select('product_no')
+    .order('product_no', { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle()
+  const nextProductNo = ((maxRow?.product_no as number | null) ?? 0) + 1
+
   const { data: newProduct, error } = await supabase
     .from('products')
     .insert({
@@ -457,8 +477,10 @@ export async function duplicateProduct(id: string) {
       thumbnail_url: original.thumbnail_url,
       sub_images: original.sub_images,
       category_nos: original.category_nos,
-      status: 'hidden',
-      is_active: false,
+      // 원본과 동일한 노출 상태로 복제
+      status: original.status,
+      is_active: original.is_active,
+      product_no: nextProductNo,
     })
     .select('id')
     .single()

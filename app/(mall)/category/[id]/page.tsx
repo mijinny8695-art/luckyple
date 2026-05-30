@@ -124,6 +124,7 @@ export default async function CategoryPage({
       .overlaps('category_nos', allNos)
       .eq('is_active', true)
       .order('product_no', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false })
       .range(0, 39)
 
     initialProducts = data ?? []

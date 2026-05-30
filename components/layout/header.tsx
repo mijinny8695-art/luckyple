@@ -76,9 +76,9 @@ export async function Header({
           {/* 가운데 — 로고 (정 가운데 정렬) */}
           <Link href="/" className="flex items-center justify-self-center py-1 md:py-3">
             {logoUrl ? (
-              <img src={logoUrl} alt={siteName} className="h-12 w-auto max-w-[220px] object-contain" />
+              <img src={logoUrl} alt={siteName} className="h-8 w-auto max-w-[160px] object-contain md:h-12 md:max-w-[220px]" />
             ) : (
-              <span className="text-3xl md:text-4xl tracking-widest text-zinc-900" style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic' }}>{siteName}</span>
+              <span className="text-xl tracking-widest text-zinc-900 md:text-4xl" style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic' }}>{siteName}</span>
             )}
           </Link>
 
@@ -90,12 +90,16 @@ export async function Header({
                 <NotificationBell initialList={notifications.list} initialUnread={notifications.unread} />
               )}
             </div>
-            <div className="flex items-center gap-2 md:hidden">
+            <div className="flex items-center gap-1 md:hidden">
               {user && (
                 <NotificationBell initialList={notifications.list} initialUnread={notifications.unread} />
               )}
-              <Link href="/cart" aria-label="장바구니">
-                <svg className="h-5 w-5 text-zinc-900" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <Link
+                href="/cart"
+                aria-label="장바구니"
+                className="flex h-7 w-7 items-center justify-center rounded-full text-[#2a2a2a] hover:bg-zinc-100"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007zM8.625 10.5a.375.375 0 11-.75 0 .375.375 0 01.75 0zm7.5 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
                 </svg>
               </Link>

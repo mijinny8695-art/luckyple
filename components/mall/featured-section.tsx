@@ -80,13 +80,16 @@ export async function FeaturedSection({
     query = query
       .order('view_count', { ascending: false })
       .order('product_no', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false })
   } else if (sortBy === 'priceAsc') {
     query = query.order('price', { ascending: true })
   } else if (sortBy === 'priceDesc') {
     query = query.order('price', { ascending: false })
   } else {
-    // 등록순 (기본) — product_no 내림차순
-    query = query.order('product_no', { ascending: false, nullsFirst: false })
+    // 등록순 (기본) — product_no 내림차순, 동률은 created_at 내림차순으로 복제본을 원본 위에 노출
+    query = query
+      .order('product_no', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false })
   }
 
   const { data: products } = await query.limit(limit)
