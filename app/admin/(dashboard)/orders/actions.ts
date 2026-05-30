@@ -2,6 +2,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import type { NotificationType } from '@/lib/notifications'
+import { createNotification } from '@/lib/notifications-server'
 
 export type OrderStatus =
   | 'pending_payment'
@@ -163,6 +165,35 @@ export async function updateOrderStatus(id: string, newStatus: OrderStatus) {
 
   const { error } = await supabase.from('orders').update(updates).eq('id', id)
   if (error) return { error: `상태 변경 실패: ${error.message}` }
+
+  // 회원 알림 발송 (user_id 가 있을 때만)
+  if (current.user_id) {
+    const NOTIF_MAP: Partial<Record<OrderStatus, { type: NotificationType; title: string; body?: string }>> = {
+      paid: { type: 'order_paid', title: '입금이 확인되었습니다', body: '곧 상품을 준비해 발송해드릴게요.' },
+      preparing: { type: 'order_preparing', title: '상품을 준비하고 있습니다' },
+      shipping: { type: 'order_shipping', title: '상품이 발송되었습니다' },
+      delivered: {
+        type: 'order_delivered',
+        title: '배송이 완료되었습니다',
+        body: current.points_earned > 0 ? `${current.points_earned.toLocaleString()}P 가 적립되었어요.` : undefined,
+      },
+      cancelled: {
+        type: 'order_cancelled',
+        title: '주문이 취소되었습니다',
+        body: current.points_used > 0 ? `사용하신 ${current.points_used.toLocaleString()}P 가 복원되었어요.` : undefined,
+      },
+    }
+    const meta = NOTIF_MAP[newStatus]
+    if (meta) {
+      await createNotification({
+        userId: current.user_id,
+        type: meta.type,
+        title: meta.title,
+        body: meta.body,
+        href: `/orders/${current.id}`,
+      })
+    }
+  }
 
   // 부수 효과 — 포인트 변경 + history
   if (newStatus === 'delivered' && current.user_id && current.points_earned > 0) {

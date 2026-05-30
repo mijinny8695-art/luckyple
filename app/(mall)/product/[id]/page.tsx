@@ -5,6 +5,7 @@ import { getSiteConfig, getSiteConfigFull } from '@/lib/site'
 import { ProductGallery } from '@/components/mall/product-gallery'
 import { ProductBuyBox } from '@/components/mall/product-buy-box'
 import { ShareButton } from '@/components/mall/share-button'
+import { ScrollToTop } from '@/components/scroll-to-top'
 import type { Metadata } from 'next'
 
 // NEW 뱃지 — 등록 후 14일 이내
@@ -143,6 +144,7 @@ export default async function ProductPage({
 
   return (
     <div>
+      <ScrollToTop />
       {/* 상단 카테고리 경로 (브레드크럼) */}
       {breadcrumb.length > 0 && (
         <nav className="bg-white">

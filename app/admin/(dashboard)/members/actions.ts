@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { createNotification } from '@/lib/notifications-server'
 
 export type Member = {
   id: string
@@ -82,6 +83,90 @@ export async function getMembers(search?: string): Promise<Member[]> {
   }))
 }
 
+export type MemberLoginInfo = {
+  last_login_at: string | null
+  last_login_ip: string | null
+  login_count: number
+}
+
+export async function getMemberById(id: string): Promise<Member | null> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('profiles')
+    .select('id, email, name, role, points, gender, phone, homepage, address, zipcode, address_detail, birthdate, referrer, memo, created_at')
+    .eq('id', id)
+    .single()
+  if (!data) return null
+
+  const row = data as Omit<Member, 'total_purchased' | 'post_count'>
+
+  const { data: orderRows } = await supabase
+    .from('orders')
+    .select('total_amount, status')
+    .eq('user_id', id)
+    .neq('status', 'cancelled')
+  const total_purchased = (orderRows ?? []).reduce(
+    (s, o: { total_amount: number }) => s + (o.total_amount ?? 0),
+    0,
+  )
+
+  const { count: post_count } = await supabase
+    .from('board_posts')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', id)
+
+  return { ...row, total_purchased, post_count: post_count ?? 0 }
+}
+
+export async function getMemberLoginInfo(id: string): Promise<MemberLoginInfo> {
+  const supabase = await createClient()
+  const [{ data: last }, { count }] = await Promise.all([
+    supabase
+      .from('login_logs')
+      .select('created_at, ip')
+      .eq('user_id', id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('login_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', id),
+  ])
+
+  return {
+    last_login_at: (last as { created_at: string | null } | null)?.created_at ?? null,
+    last_login_ip: (last as { ip: string | null } | null)?.ip ?? null,
+    login_count: count ?? 0,
+  }
+}
+
+export type ProfileUpdate = {
+  name?: string | null
+  gender?: 'male' | 'female' | 'other' | null
+  phone?: string | null
+  homepage?: string | null
+  address?: string | null
+  zipcode?: string | null
+  address_detail?: string | null
+  birthdate?: string | null
+  referrer?: string | null
+}
+
+export async function updateMemberProfile(id: string, patch: ProfileUpdate) {
+  const supabase = await createClient()
+  const update: Record<string, string | null> = {}
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) continue
+    update[k] = typeof v === 'string' ? (v.trim() || null) : v
+  }
+  const { error } = await supabase.from('profiles').update(update).eq('id', id)
+  if (error) return { error: '회원 정보 저장 중 오류가 발생했습니다.' }
+  revalidatePath('/admin/members')
+  revalidatePath(`/admin/members/${id}`)
+  return { success: true }
+}
+
 export async function updateMemberMemo(id: string, memo: string) {
   const supabase = await createClient()
   const { error } = await supabase
@@ -135,6 +220,15 @@ export async function adjustMemberPoints(memberId: string, delta: number, reason
     reason: reason.trim(),
     source: delta > 0 ? 'admin_grant' : 'admin_revoke',
     created_by: user.id,
+  })
+
+  // 회원 알림
+  await createNotification({
+    userId: memberId,
+    type: 'points_admin',
+    title: delta > 0 ? `${delta.toLocaleString()}P 가 지급되었습니다` : `${Math.abs(delta).toLocaleString()}P 가 회수되었습니다`,
+    body: reason.trim(),
+    href: '/mypage/points',
   })
 
   revalidatePath('/admin/members')

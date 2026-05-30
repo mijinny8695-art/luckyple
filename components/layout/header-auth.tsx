@@ -26,6 +26,18 @@ export function HeaderAuth({ user, isAdmin }: { user: User | null; isAdmin: bool
           </Link>
         )}
         <Link
+          href="/mypage"
+          className="text-[12px] text-[#2a2a2a] hover:underline"
+        >
+          마이페이지
+        </Link>
+        <Link
+          href="/mypage"
+          className="text-[12px] text-[#2a2a2a] hover:underline"
+        >
+          주문내역
+        </Link>
+        <Link
           href="/cart"
           className="text-[12px] text-[#2a2a2a] hover:underline"
         >

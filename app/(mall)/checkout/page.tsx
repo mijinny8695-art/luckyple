@@ -4,7 +4,7 @@ import { CheckoutForm } from './checkout-form'
 
 export const metadata = { title: '주문/결제' }
 
-type SearchParams = Promise<{ productId?: string; qty?: string }>
+type SearchParams = Promise<{ productId?: string; qty?: string; cartItems?: string }>
 
 export default async function CheckoutPage({
   searchParams,
@@ -14,6 +14,7 @@ export default async function CheckoutPage({
   const sp = await searchParams
   const buyNowProductId = sp.productId ?? ''
   const buyNowQty = Math.max(1, parseInt(sp.qty ?? '1') || 1)
+  const cartItemIds = sp.cartItems ? sp.cartItems.split(',').filter(Boolean) : undefined
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -49,11 +50,15 @@ export default async function CheckoutPage({
       items = [{ id: p.id, name: p.name, price: p.price, thumbnail_url: p.thumbnail_url, quantity: buyNowQty }]
     }
   } else {
-    const { data: cart } = await supabase
+    let cartQuery = supabase
       .from('cart_items')
       .select('id, product_id, quantity')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
+    if (cartItemIds && cartItemIds.length > 0) {
+      cartQuery = cartQuery.in('id', cartItemIds)
+    }
+    const { data: cart } = await cartQuery
     if (cart && cart.length > 0) {
       const ids = cart.map((c) => c.product_id)
       const { data: products } = await supabase
@@ -83,6 +88,7 @@ export default async function CheckoutPage({
         source={source}
         buyNowProductId={buyNowProductId || undefined}
         buyNowQuantity={source === 'buy_now' ? buyNowQty : undefined}
+        cartItemIds={source === 'cart' && cartItemIds ? cartItemIds : undefined}
         items={items}
         userEmail={user.email ?? ''}
         userName={profile?.name ?? ''}

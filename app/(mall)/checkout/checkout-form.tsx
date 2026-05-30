@@ -45,6 +45,7 @@ export function CheckoutForm({
   source,
   buyNowProductId,
   buyNowQuantity,
+  cartItemIds,
   items,
   userEmail,
   userName,
@@ -54,6 +55,7 @@ export function CheckoutForm({
   source: 'cart' | 'buy_now'
   buyNowProductId?: string
   buyNowQuantity?: number
+  cartItemIds?: string[]
   items: Item[]
   userEmail: string
   userName: string
@@ -162,6 +164,7 @@ export function CheckoutForm({
       source,
       buyNowProductId,
       buyNowQuantity,
+      cartItemIds,
       ordererName,
       ordererPhone,
       ordererEmail,

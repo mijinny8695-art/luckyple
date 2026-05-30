@@ -22,7 +22,7 @@ export function HeaderSearch() {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="검색"
-        className="w-32 border-b border-zinc-300 bg-transparent px-1 py-0.5 text-[12px] text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none"
+        className="w-48 border-b border-zinc-300 bg-transparent px-1 py-0.5 text-[12px] text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none lg:w-56"
       />
       <button type="submit" className="text-zinc-600 hover:text-zinc-900">
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

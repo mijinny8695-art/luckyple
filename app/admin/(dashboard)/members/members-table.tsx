@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import {
   updateMemberRole,
@@ -96,9 +97,13 @@ export function MembersTable({
                   return (
                     <tr
                       key={member.id}
-                      className={`group hover:bg-zinc-50/70 ${checked ? 'bg-blue-50/30' : ''}`}
+                      onClick={() => router.push(`/admin/members/${member.id}`)}
+                      className={`group cursor-pointer hover:bg-zinc-50/70 ${checked ? 'bg-blue-50/30' : ''}`}
                     >
-                      <td className="px-4 py-3.5 text-center">
+                      <td
+                        className="px-4 py-3.5 text-center"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <input
                           type="checkbox"
                           checked={checked}
@@ -110,7 +115,7 @@ export function MembersTable({
                         {member.name || <span className="text-zinc-300">-</span>}
                       </td>
                       <td className="px-4 py-3.5 text-zinc-600">{member.email}</td>
-                      <td className="px-4 py-3.5">
+                      <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
                           onClick={async () => {
@@ -145,7 +150,7 @@ export function MembersTable({
                           ? member.total_purchased.toLocaleString()
                           : <span className="text-zinc-300">0</span>}
                       </td>
-                      <td className="px-4 py-3.5">
+                      <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
                           onClick={() => setMemoEditing(member)}
@@ -239,21 +244,55 @@ function RowMenu({
   onAdjustPoints: () => void
   onDelete: () => void
 }) {
-  const ref = useRef<HTMLDivElement>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+
+  useEffect(() => {
+    if (!isOpen || !btnRef.current) {
+      setPos(null)
+      return
+    }
+    const rect = btnRef.current.getBoundingClientRect()
+    const MENU_W = 144
+    const MENU_H = 80
+    let left = rect.right - MENU_W
+    let top = rect.bottom + 4
+    if (top + MENU_H > window.innerHeight - 8) top = rect.top - MENU_H - 4
+    if (left < 8) left = 8
+    setPos({ top, left })
+  }, [isOpen])
+
   useEffect(() => {
     if (!isOpen) return
     function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+      const t = e.target as Node
+      if (btnRef.current?.contains(t)) return
+      if (menuRef.current?.contains(t)) return
+      onClose()
+    }
+    function handleScrollOrResize() {
+      onClose()
     }
     document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
+    window.addEventListener('scroll', handleScrollOrResize, true)
+    window.addEventListener('resize', handleScrollOrResize)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      window.removeEventListener('scroll', handleScrollOrResize, true)
+      window.removeEventListener('resize', handleScrollOrResize)
+    }
   }, [isOpen, onClose])
 
   return (
-    <div ref={ref} className="relative inline-block">
+    <>
       <button
+        ref={btnRef}
         type="button"
-        onClick={onToggle}
+        onClick={(e) => {
+          e.stopPropagation()
+          onToggle()
+        }}
         className="cursor-pointer rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
         aria-label="더보기"
       >
@@ -263,25 +302,32 @@ function RowMenu({
           <circle cx="12" cy="19" r="1.7" />
         </svg>
       </button>
-      {isOpen && (
-        <div className="absolute right-0 top-full z-20 mt-1 w-36 overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 text-sm shadow-lg">
-          <button
-            type="button"
-            onClick={onAdjustPoints}
-            className="block w-full cursor-pointer px-3 py-1.5 text-left text-zinc-700 hover:bg-zinc-50"
+      {isOpen && pos && typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{ position: 'fixed', top: pos.top, left: pos.left }}
+            className="z-[1000] w-36 overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 text-sm shadow-xl"
+            onClick={(e) => e.stopPropagation()}
           >
-            포인트 조정
-          </button>
-          <button
-            type="button"
-            onClick={onDelete}
-            className="block w-full cursor-pointer px-3 py-1.5 text-left text-rose-600 hover:bg-rose-50"
-          >
-            회원 삭제
-          </button>
-        </div>
-      )}
-    </div>
+            <button
+              type="button"
+              onClick={onAdjustPoints}
+              className="block w-full cursor-pointer px-3 py-1.5 text-left text-zinc-700 hover:bg-zinc-50"
+            >
+              포인트 조정
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              className="block w-full cursor-pointer px-3 py-1.5 text-left text-rose-600 hover:bg-rose-50"
+            >
+              회원 삭제
+            </button>
+          </div>,
+          document.body,
+        )}
+    </>
   )
 }
 

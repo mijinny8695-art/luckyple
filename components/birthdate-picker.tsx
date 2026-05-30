@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 const CURRENT_YEAR = new Date().getFullYear()
 const YEAR_FROM = CURRENT_YEAR - 100
@@ -19,10 +19,12 @@ export function BirthdatePicker({
   name = 'birthdate',
   required = false,
   defaultValue,
+  onValueChange,
 }: {
   name?: string
   required?: boolean
   defaultValue?: string
+  onValueChange?: (value: string) => void
 }) {
   const initial = useMemo(() => {
     if (!defaultValue) return { y: '', m: '', d: '' }
@@ -33,6 +35,10 @@ export function BirthdatePicker({
   const [year, setYear] = useState(initial.y)
   const [month, setMonth] = useState(initial.m)
   const [day, setDay] = useState(initial.d)
+  const onValueChangeRef = useRef(onValueChange)
+  useEffect(() => {
+    onValueChangeRef.current = onValueChange
+  }, [onValueChange])
 
   const years = useMemo(() => {
     const arr: number[] = []
@@ -45,6 +51,10 @@ export function BirthdatePicker({
   const safeDay = day && parseInt(day) > maxDay ? String(maxDay) : day
 
   const value = year && month && day ? `${year}-${pad2(parseInt(month))}-${pad2(parseInt(safeDay))}` : ''
+
+  useEffect(() => {
+    onValueChangeRef.current?.(value)
+  }, [value])
 
   return (
     <div className="grid grid-cols-3 gap-2">
@@ -110,7 +120,7 @@ function Select({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         required={required}
-        className={`w-full appearance-none rounded-lg border border-zinc-300 bg-white px-3 py-2.5 pr-8 text-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900 ${
+        className={`h-10 w-full appearance-none rounded-lg border border-zinc-300 bg-white px-3 pr-8 text-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900 ${
           value ? 'text-zinc-900' : 'text-zinc-400'
         }`}
       >

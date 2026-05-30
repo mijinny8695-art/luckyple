@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentMemberSettings } from '@/lib/member-settings'
 import { FIELD_ORDER, type FieldKey } from '@/app/admin/(dashboard)/members/settings/config'
+import { recordLogin } from '@/lib/login-log'
 
 function pickStr(formData: FormData, key: string): string {
   return ((formData.get(key) as string) ?? '').trim()
@@ -58,7 +59,10 @@ export async function signup(formData: FormData) {
     await supabase.from('profiles').update(update).eq('id', signUpData.user.id)
   }
 
-  await supabase.auth.signInWithPassword({ email, password })
+  const { data: signInData } = await supabase.auth.signInWithPassword({ email, password })
+  if (signInData.user) {
+    await recordLogin(signInData.user.id)
+  }
   redirect('/')
 }
 

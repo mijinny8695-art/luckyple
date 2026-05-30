@@ -15,6 +15,8 @@ export type CheckoutItem = {
 export type PlaceOrderInput = {
   // 결제 대상 아이템 (cart 또는 단일 상품)
   source: 'cart' | 'buy_now'
+  // source='cart' 일 때, 카트의 일부만 결제하고 싶다면 ID 목록 전달
+  cartItemIds?: string[]
   buyNowProductId?: string
   buyNowQuantity?: number
 
@@ -70,10 +72,14 @@ export async function placeOrder(input: PlaceOrderInput) {
     }
     items = [{ productId: input.buyNowProductId, quantity: Math.max(1, Math.floor(input.buyNowQuantity)) }]
   } else {
-    const { data: cart } = await supabase
+    let cartQuery = supabase
       .from('cart_items')
       .select('id, product_id, quantity')
       .eq('user_id', user.id)
+    if (input.cartItemIds && input.cartItemIds.length > 0) {
+      cartQuery = cartQuery.in('id', input.cartItemIds)
+    }
+    const { data: cart } = await cartQuery
     if (!cart || cart.length === 0) return { error: '장바구니가 비어있습니다.' }
     items = cart.map((c) => ({ productId: c.product_id, quantity: c.quantity, cartItemId: c.id }))
   }
