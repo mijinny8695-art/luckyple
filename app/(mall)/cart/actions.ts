@@ -30,10 +30,12 @@ export async function getCartItems() {
   }))
 }
 
-export async function addToCart(productId: string) {
+export async function addToCart(productId: string, quantity: number = 1) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: '로그인이 필요합니다.' }
+
+  const qty = Math.max(1, Math.floor(quantity))
 
   const { data: existing } = await supabase
     .from('cart_items')
@@ -45,12 +47,13 @@ export async function addToCart(productId: string) {
   if (existing) {
     await supabase
       .from('cart_items')
-      .update({ quantity: existing.quantity + 1 })
+      .update({ quantity: existing.quantity + qty })
       .eq('id', existing.id)
   } else {
     await supabase.from('cart_items').insert({
       user_id: user.id,
       product_id: productId,
+      quantity: qty,
     })
   }
 

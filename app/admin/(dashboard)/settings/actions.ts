@@ -10,7 +10,49 @@ export type Site = {
   description: string | null
   logo_url: string | null
   footer_info: Record<string, string>
+  // 결제 / 배송 / 포인트 설정
+  bank_name: string | null
+  bank_account_number: string | null
+  bank_account_holder: string | null
+  shipping_fee: number
+  free_shipping_threshold: number
+  point_earn_rate: number
+  point_min_balance: number
+  point_min_order_amount: number
   created_at: string
+}
+
+export type CommerceSettings = {
+  bank_name: string | null
+  bank_account_number: string | null
+  bank_account_holder: string | null
+  shipping_fee: number
+  free_shipping_threshold: number
+  point_earn_rate: number
+  point_min_balance: number
+  point_min_order_amount: number
+}
+
+export async function updateSiteCommerce(id: string, settings: CommerceSettings) {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('sites')
+    .update({
+      bank_name: settings.bank_name?.trim() || null,
+      bank_account_number: settings.bank_account_number?.trim() || null,
+      bank_account_holder: settings.bank_account_holder?.trim() || null,
+      shipping_fee: Math.max(0, settings.shipping_fee),
+      free_shipping_threshold: Math.max(0, settings.free_shipping_threshold),
+      point_earn_rate: Math.max(0, settings.point_earn_rate),
+      point_min_balance: Math.max(0, settings.point_min_balance),
+      point_min_order_amount: Math.max(0, settings.point_min_order_amount),
+    })
+    .eq('id', id)
+
+  if (error) return { error: '결제·배송 설정 저장 중 오류가 발생했습니다.' }
+  revalidatePath('/admin/settings')
+  revalidatePath('/checkout')
+  return { success: true }
 }
 
 export async function getSites() {

@@ -434,7 +434,18 @@ export async function duplicateProduct(id: string) {
 
   if (!original) return { error: '원본 상품을 찾을 수 없습니다.' }
 
-  const slug = generateSlug(original.name + '-복사')
+  // slug 중복 회피 — 같은 prefix 의 기존 slug 수 + 1 을 접미사로 추가
+  // (createProduct 와 동일 로직)
+  const baseSlug = generateSlug(original.name + '-복사')
+  let slug = baseSlug
+  const { data: existing } = await supabase
+    .from('products')
+    .select('slug')
+    .like('slug', `${baseSlug}%`)
+  if (existing && existing.length > 0) {
+    slug = `${baseSlug}-${existing.length + 1}`
+  }
+
   const { data: newProduct, error } = await supabase
     .from('products')
     .insert({
@@ -452,7 +463,13 @@ export async function duplicateProduct(id: string) {
     .select('id')
     .single()
 
-  if (error) return { error: '상품 복제 중 오류가 발생했습니다.' }
+  if (error) {
+    // 23505 = unique_violation (slug 중복 시)
+    if (error.code === '23505') {
+      return { error: '동일한 이름의 복사본이 너무 많습니다. 원본 이름을 변경 후 다시 시도해주세요.' }
+    }
+    return { error: `상품 복제 중 오류: ${error.message}` }
+  }
 
   // 카테고리 연결 복제
   const { data: relations } = await supabase

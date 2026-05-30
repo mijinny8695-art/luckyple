@@ -77,8 +77,16 @@ export type FeaturedSectionConfig = LayoutSectionBase & {
   showMoreButton?: boolean
   // 표시 형태: 'grid' = 단일 그리드(기본), 'slider' = 가로 슬라이드
   display?: 'grid' | 'slider'
-  perRow?: number // 한 줄에 보여줄 상품 수 (데스크탑)
-  rows?: number // 줄 수
+  // PC: 한 줄 갯수 / 줄 수 (기존 perRow/rows = PC 값으로 유지)
+  perRow?: number
+  rows?: number
+  // 모바일: 한 줄 갯수 / 줄 수 (없으면 기본 2)
+  perRowMobile?: number
+  rowsMobile?: number
+  // 진열 수 (DB 에서 가져올 상품 수). 4/8/12/16/20/24/28. 기본 perRow*rows
+  totalItems?: number
+  // 진열 방식 (정렬): 등록순/인기순/낮은가격순/높은가격순
+  sortBy?: 'created' | 'popular' | 'priceAsc' | 'priceDesc'
   autoSeconds?: number // 슬라이드 자동 넘김 간격(초). 0 = 끔
 }
 
@@ -152,6 +160,9 @@ export type SiteDesign = {
   footer_hours: string | null
   footer_lunch: string | null
   kakao_link: string | null
+  nav_font_size: number | null
+  nav_color: string | null
+  nav_hover_color: string | null
   show_categories_section: boolean
   show_featured_section: boolean
   show_brands_section: boolean

@@ -99,6 +99,10 @@ export function LayoutRenderer({
                   display={cfg.display || 'grid'}
                   perRow={cfg.perRow || 4}
                   rows={cfg.rows || 2}
+                  perRowMobile={cfg.perRowMobile ?? 2}
+                  rowsMobile={cfg.rowsMobile ?? cfg.rows ?? 2}
+                  totalItems={cfg.totalItems}
+                  sortBy={cfg.sortBy ?? 'created'}
                   autoSeconds={cfg.autoSeconds || 0}
                 />
               )

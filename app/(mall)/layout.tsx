@@ -31,7 +31,14 @@ export default async function MallLayout({
 
   return (
     <>
-      <Header siteName={site.name} navItems={site.design?.nav_items} logoUrl={site.design?.logo_url} />
+      <Header
+        siteName={site.name}
+        navItems={site.design?.nav_items}
+        logoUrl={site.design?.logo_url}
+        navFontSize={site.design?.nav_font_size}
+        navColor={site.design?.nav_color}
+        navHoverColor={site.design?.nav_hover_color}
+      />
       <PageTracker siteId={site.id} />
       {popups && popups.length > 0 && <LayerPopup popups={popups} />}
       <FloatingButtons kakaoLink={site.design?.kakao_link} />

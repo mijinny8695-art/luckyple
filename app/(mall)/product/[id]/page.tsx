@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getSiteConfig, getSiteConfigFull } from '@/lib/site'
 import { ProductGallery } from '@/components/mall/product-gallery'
-import { AddToCartButton } from '@/components/mall/add-to-cart-button'
+import { ProductBuyBox } from '@/components/mall/product-buy-box'
 import type { Metadata } from 'next'
 
 export async function generateMetadata({
@@ -148,12 +148,7 @@ export default async function ProductPage({
             />
           )}
 
-          <div className="mt-8 flex gap-3">
-            <a href="https://open.kakao.com/o/sXBFQ9ag" target="_blank" rel="noopener noreferrer" className="flex-1 rounded-lg bg-zinc-900 py-3 text-center text-sm font-medium text-white hover:bg-zinc-800">
-              구매하기
-            </a>
-            <AddToCartButton productId={product.id} />
-          </div>
+          <ProductBuyBox productId={product.id} price={product.price} />
         </div>
       </div>
 

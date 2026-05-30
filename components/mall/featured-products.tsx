@@ -19,6 +19,9 @@ type Props = {
   display?: 'grid' | 'slider'
   perRow?: number
   rows?: number
+  perRowMobile?: number
+  rowsMobile?: number
+  totalItems?: number
   autoSeconds?: number
   categoryHref: string
   fromCategoryId?: string
@@ -66,8 +69,9 @@ export function FeaturedProducts(props: Props) {
 }
 
 // ── 단일 그리드 ──
-function GridView({ products, mode, showMoreButton = true, perRow = 4, rows = 2, categoryHref, fromCategoryId }: Props) {
-  const base = Math.max(1, perRow * rows)
+function GridView({ products, mode, showMoreButton = true, perRow = 4, rows = 2, perRowMobile = 2, totalItems, categoryHref, fromCategoryId }: Props) {
+  // 진열수가 있으면 우선, 없으면 perRow*rows
+  const base = Math.max(1, totalItems ?? perRow * rows)
   const [visible, setVisible] = useState(base)
   const shown = mode === 'expand' ? products.slice(0, visible) : products.slice(0, base)
   const canExpand = mode === 'expand' && visible < products.length
@@ -75,8 +79,8 @@ function GridView({ products, mode, showMoreButton = true, perRow = 4, rows = 2,
   return (
     <>
       <div
-        className="grid grid-cols-2 gap-x-4 gap-y-8 md:[grid-template-columns:repeat(var(--per),minmax(0,1fr))]"
-        style={{ '--per': perRow } as CSSProperties}
+        className="grid gap-x-4 gap-y-8 [grid-template-columns:repeat(var(--per-m),minmax(0,1fr))] md:[grid-template-columns:repeat(var(--per-d),minmax(0,1fr))]"
+        style={{ '--per-m': perRowMobile, '--per-d': perRow } as CSSProperties}
       >
         {shown.map((p) => (
           <ProductCard key={p.id} product={p} fromCategoryId={fromCategoryId} />
@@ -106,11 +110,13 @@ function GridView({ products, mode, showMoreButton = true, perRow = 4, rows = 2,
 function RowSlider({
   products,
   perRow,
+  perRowMobile,
   autoSeconds,
   fromCategoryId,
 }: {
   products: Product[]
   perRow: number
+  perRowMobile: number
   autoSeconds: number
   fromCategoryId?: string
 }) {
@@ -139,8 +145,8 @@ function RowSlider({
     <div className="relative" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
       <div
         ref={ref}
-        className="grid grid-flow-col gap-x-4 overflow-x-auto scroll-smooth [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [grid-auto-columns:calc((100%-1rem)/2)] md:[grid-auto-columns:calc((100%-(var(--per)-1)*1rem)/var(--per))]"
-        style={{ '--per': perRow } as CSSProperties}
+        className="grid grid-flow-col gap-x-4 overflow-x-auto scroll-smooth [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [grid-auto-columns:calc((100%-(var(--per-m)-1)*1rem)/var(--per-m))] md:[grid-auto-columns:calc((100%-(var(--per-d)-1)*1rem)/var(--per-d))]"
+        style={{ '--per-m': perRowMobile, '--per-d': perRow } as CSSProperties}
       >
         {products.map((p) => (
           <div data-card key={p.id}>
@@ -174,10 +180,10 @@ function RowSlider({
 }
 
 // ── 가로 슬라이드: 줄마다 독립 슬라이더, 더보기로 줄 1개씩 추가 ──
-function SliderView({ products, mode, showMoreButton = true, perRow = 4, rows = 2, autoSeconds = 0, categoryHref, fromCategoryId }: Props) {
+function SliderView({ products, mode, showMoreButton = true, perRow = 4, rows = 2, perRowMobile = 2, autoSeconds = 0, categoryHref, fromCategoryId }: Props) {
   // 더보기를 누르면 줄(독립 슬라이더)을 1개씩 추가
   const [displayRows, setDisplayRows] = useState(Math.max(1, rows))
-  // 한 줄(슬라이더)에 담을 상품 수 (화살표로 가로 스크롤할 분량)
+  // 한 줄(슬라이더)에 담을 상품 수 (화살표로 가로 스크롤할 분량) — PC 기준
   const chunkSize = Math.max(perRow * 3, perRow + 1)
   const totalRows = Math.max(1, Math.ceil(products.length / chunkSize))
   const shownRows = Math.min(displayRows, totalRows)
@@ -191,6 +197,7 @@ function SliderView({ products, mode, showMoreButton = true, perRow = 4, rows = 
             key={i}
             products={products.slice(i * chunkSize, (i + 1) * chunkSize)}
             perRow={perRow}
+            perRowMobile={perRowMobile}
             autoSeconds={autoSeconds}
             fromCategoryId={fromCategoryId}
           />

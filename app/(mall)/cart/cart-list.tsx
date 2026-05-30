@@ -128,9 +128,9 @@ export function CartList({ items }: { items: CartItem[] }) {
           <span className="text-lg font-bold text-zinc-900">합계</span>
           <span className="text-lg font-bold text-zinc-900">{total.toLocaleString()}원</span>
         </div>
-        <a href="https://open.kakao.com/o/sXBFQ9ag" target="_blank" rel="noopener noreferrer" className="mt-6 block w-full bg-zinc-900 py-4 text-center text-sm font-medium text-white hover:bg-zinc-800">
+        <Link href="/checkout" className="mt-6 block w-full bg-zinc-900 py-4 text-center text-sm font-medium text-white hover:bg-zinc-800">
           주문하기
-        </a>
+        </Link>
       </div>
     </div>
   )

@@ -107,11 +107,16 @@ export function ProductTable({
             ))}
             <button
               onClick={async () => {
+                const errors: string[] = []
                 for (const id of selected) {
-                  await duplicateProduct(id)
+                  const r = await duplicateProduct(id)
+                  if (r?.error) errors.push(r.error)
                 }
                 setSelected(new Set())
                 router.refresh()
+                if (errors.length > 0) {
+                  alert(`일부 상품 복제 실패\n\n${[...new Set(errors)].join('\n')}`)
+                }
               }}
               className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
             >
@@ -240,17 +245,32 @@ export function ProductTable({
                       <div className="flex items-center justify-center gap-1.5">
                         <Link
                           href={`/admin/products/${product.id}/edit`}
-                          className="rounded-md bg-blue-50 px-2.5 py-1 text-[11px] font-medium text-blue-600 transition hover:bg-blue-100"
+                          className="cursor-pointer rounded-md bg-blue-50 px-2.5 py-1 text-[11px] font-medium text-blue-600 transition hover:bg-blue-100"
                         >
                           수정
                         </Link>
                         <Link
                           href={`/product/${product.slug || product.id}`}
                           target="_blank"
-                          className="rounded-md bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-600 transition hover:bg-amber-100"
+                          className="cursor-pointer rounded-md bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-600 transition hover:bg-amber-100"
                         >
                           보기
                         </Link>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const r = await duplicateProduct(product.id)
+                            if (r?.error) {
+                              alert(r.error)
+                            } else {
+                              router.refresh()
+                            }
+                          }}
+                          onMouseDown={(e) => e.preventDefault()}
+                          className="cursor-pointer rounded-md bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-600 transition hover:bg-emerald-100"
+                        >
+                          복제
+                        </button>
                         <button
                           type="button"
                           onClick={() => {
@@ -258,7 +278,7 @@ export function ProductTable({
                             setShowDeleteModal(true)
                           }}
                           onMouseDown={(e) => e.preventDefault()}
-                          className="rounded-md bg-red-50 px-2.5 py-1 text-[11px] font-medium text-red-500 transition hover:bg-red-100"
+                          className="cursor-pointer rounded-md bg-red-50 px-2.5 py-1 text-[11px] font-medium text-red-500 transition hover:bg-red-100"
                         >
                           삭제
                         </button>

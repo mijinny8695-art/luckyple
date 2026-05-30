@@ -84,7 +84,17 @@ function SubMenu({ item }: { item: NavSubItem }) {
   )
 }
 
-export function NavDropdown({ item }: { item: NavItem }) {
+export function NavDropdown({
+  item,
+  fontSize = 13,
+  color = '#484848',
+  hoverColor = '#18181b',
+}: {
+  item: NavItem
+  fontSize?: number
+  color?: string
+  hoverColor?: string
+}) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -95,8 +105,15 @@ export function NavDropdown({ item }: { item: NavItem }) {
     >
       <Link
         href={item.href}
-        className="px-5 text-[13px] font-bold text-[#484848] hover:text-zinc-900"
-        style={{ height: '50px', display: 'flex', alignItems: 'center' }}
+        className="px-5 font-bold transition-colors hover:text-[color:var(--nav-hover)]"
+        style={{
+          height: '50px',
+          display: 'flex',
+          alignItems: 'center',
+          fontSize: `${fontSize}px`,
+          color,
+          ['--nav-hover' as string]: hoverColor,
+        }}
       >
         {item.label}
       </Link>

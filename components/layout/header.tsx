@@ -12,11 +12,25 @@ export async function Header({
   siteName,
   navItems,
   logoUrl,
+  navFontSize,
+  navColor,
+  navHoverColor,
 }: {
   siteName: string
   navItems?: NavItem[]
   logoUrl?: string | null
+  navFontSize?: number | null
+  navColor?: string | null
+  navHoverColor?: string | null
 }) {
+  const fontSize = navFontSize || 13
+  const color = navColor || '#484848'
+  const hoverColor = navHoverColor || '#18181b'
+  const navStyle = {
+    fontSize: `${fontSize}px`,
+    color,
+    '--nav-hover': hoverColor,
+  } as React.CSSProperties
   const supabase = await createClient()
 
   const [{ data: { user } }, categories] = await Promise.all([
@@ -75,16 +89,22 @@ export async function Header({
             <div className="absolute left-4 top-0">
               <CategoryMenu items={items} />
             </div>
-            <nav className="flex items-center justify-center">
+            <nav data-nav-widget="true" className="flex items-center justify-center">
             {items.map((item, index) => (
               item.children && item.children.length > 0 ? (
-                <NavDropdown key={`${item.href}-${index}`} item={item} />
+                <NavDropdown
+                  key={`${item.href}-${index}`}
+                  item={item}
+                  fontSize={fontSize}
+                  color={color}
+                  hoverColor={hoverColor}
+                />
               ) : (
                 <Link
                   key={`${item.href}-${index}`}
                   href={item.href}
-                  className="px-5 text-[13px] font-bold text-[#484848] hover:text-zinc-900"
-                  style={{ height: '50px', display: 'flex', alignItems: 'center' }}
+                  className="px-5 font-bold transition-colors hover:text-[color:var(--nav-hover)]"
+                  style={{ ...navStyle, height: '50px', display: 'flex', alignItems: 'center' }}
                 >
                   {item.label}
                 </Link>

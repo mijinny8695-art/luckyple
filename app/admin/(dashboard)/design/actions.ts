@@ -177,6 +177,30 @@ export async function saveLayout(siteId: string, layout: LayoutSection[]) {
   return { success: true }
 }
 
+// 네비게이션 메뉴 스타일 (폰트 크기 / 글자색 / 호버색) 저장
+export async function saveNavStyle(
+  siteId: string,
+  navStyle: { nav_font_size: number; nav_color: string; nav_hover_color: string }
+) {
+  const supabase = await createClient()
+
+  const { error } = await supabase.from('site_design').upsert(
+    {
+      site_id: siteId,
+      ...navStyle,
+    },
+    { onConflict: 'site_id' }
+  )
+
+  if (error) {
+    return { error: '네비게이션 스타일 저장 중 오류가 발생했습니다.' }
+  }
+
+  revalidatePath('/admin/design')
+  revalidatePath('/', 'layout')
+  return { success: true }
+}
+
 // ── 배너 관리 ──
 
 export async function getBanners(siteId: string) {

@@ -13,8 +13,9 @@ import type {
   TextWidgetConfig,
   SpacerWidgetConfig,
   BoardSectionConfig,
+  SiteDesign,
 } from '@/lib/types/design'
-import { saveLayout } from './actions'
+import { saveLayout, saveNavStyle } from './actions'
 import { BannerPickerModal } from './banner-picker-modal'
 import { InlineEditor } from '@/components/admin/inline-editor'
 
@@ -41,12 +42,14 @@ export function LayoutManager({
   banners,
   categories: allCategories,
   boards,
+  design,
 }: {
   siteId: string
   layout: LayoutSection[]
   banners: Banner[]
   categories: CategoryOption[]
   boards: BoardOption[]
+  design: SiteDesign | null
 }) {
   const [sections, setSections] = useState<LayoutSection[]>(initialLayout)
   const [saving, setSaving] = useState(false)
@@ -60,12 +63,57 @@ export function LayoutManager({
   const [showAddMenu, setShowAddMenu] = useState(false)
   const [viewMode, setViewMode] = useState<'pc' | 'mobile'>('pc')
   const [previewKey, setPreviewKey] = useState(0)
+
+  // 네비게이션 위젯 편집 모달
+  const [editingNav, setEditingNav] = useState(false)
+  // 입력 자유도를 위해 string 으로 보관 (빈 값/한 자리도 허용) — blur/save 시 10 이하면 10 으로 보정
+  const [navFontSize, setNavFontSize] = useState<string>(String(design?.nav_font_size ?? 13))
+  const [navColor, setNavColor] = useState<string>(design?.nav_color ?? '#484848')
+  const [navHoverColor, setNavHoverColor] = useState<string>(design?.nav_hover_color ?? '#18181b')
+  const [navSaving, setNavSaving] = useState(false)
+
+  const openNavEditor = () => {
+    // 모달 열 때 현재 저장된 값으로 리셋
+    setNavFontSize(String(design?.nav_font_size ?? 13))
+    setNavColor(design?.nav_color ?? '#484848')
+    setNavHoverColor(design?.nav_hover_color ?? '#18181b')
+    setEditingNav(true)
+  }
+
+  // 입력 값에서 px 폰트 크기 정규화 (10 미만 → 10, 24 초과 → 24, 비어있음 → 13)
+  const normalizeNavFontSize = (s: string) => {
+    const n = parseInt(s)
+    if (!Number.isFinite(n)) return 13
+    return Math.min(24, Math.max(10, n))
+  }
+
+  const handleSaveNavStyle = async () => {
+    setNavSaving(true)
+    const fz = normalizeNavFontSize(navFontSize)
+    setNavFontSize(String(fz)) // 보정값을 input 에도 반영
+    const result = await saveNavStyle(siteId, {
+      nav_font_size: fz,
+      nav_color: navColor,
+      nav_hover_color: navHoverColor,
+    })
+    setNavSaving(false)
+    if (result.error) {
+      setMessage({ type: 'error', text: result.error })
+      setTimeout(() => setMessage(null), 3000)
+    } else {
+      setEditingNav(false)
+      setPreviewKey((k) => k + 1) // iframe 새로고침으로 적용 반영
+    }
+  }
   const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null)
   const [sectionRects, setSectionRects] = useState<
     Record<string, { top: number; left: number; width: number; height: number }>
   >({})
   const [iframeHeight, setIframeHeight] = useState<number>(720)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  // 헤더 네비게이션 영역 좌표 (iframe document 기준 절대 top + 높이)
+  const [navRect, setNavRect] = useState<{ top: number; height: number } | null>(null)
+  const [hoveredNav, setHoveredNav] = useState(false)
   const [editingCategoryIndex, setEditingCategoryIndex] = useState<number | null>(null)
   const [categoryLabel, setCategoryLabel] = useState('')
   const [categorySubtitle, setCategorySubtitle] = useState('')
@@ -95,7 +143,12 @@ export function LayoutManager({
   const [featuredDisplay, setFeaturedDisplay] = useState<'grid' | 'slider'>('grid')
   const [featuredPerRow, setFeaturedPerRow] = useState(4)
   const [featuredRows, setFeaturedRows] = useState(2)
+  const [featuredPerRowMobile, setFeaturedPerRowMobile] = useState(2)
+  const [featuredRowsMobile, setFeaturedRowsMobile] = useState(2)
+  const [featuredTotalItems, setFeaturedTotalItems] = useState(8)
+  const [featuredSortBy, setFeaturedSortBy] = useState<'created' | 'popular' | 'priceAsc' | 'priceDesc'>('created')
   const [featuredAutoSeconds, setFeaturedAutoSeconds] = useState(0)
+  const [featuredPreviewTab, setFeaturedPreviewTab] = useState<'pc' | 'mobile'>('pc')
   const [showCatPickerInModal, setShowCatPickerInModal] = useState(false)
 
   // 게시판 위젯 모달 상태
@@ -185,6 +238,10 @@ export function LayoutManager({
     setFeaturedDisplay('grid')
     setFeaturedPerRow(4)
     setFeaturedRows(2)
+    setFeaturedPerRowMobile(2)
+    setFeaturedRowsMobile(2)
+    setFeaturedTotalItems(8)
+    setFeaturedSortBy('created')
     setFeaturedAutoSeconds(0)
     setFeaturedTitleModal({ categoryId, categoryName, isEdit: false })
   }
@@ -193,11 +250,26 @@ export function LayoutManager({
     if (!featuredTitleModal) return
     const { categoryId, isEdit } = featuredTitleModal
 
+    const common = {
+      categoryId,
+      label: featuredLabel,
+      subtitle: featuredSubtitle,
+      moreAction: featuredMoreAction,
+      showMoreButton: featuredShowMore,
+      display: featuredDisplay,
+      perRow: featuredPerRow,
+      rows: featuredRows,
+      perRowMobile: featuredPerRowMobile,
+      rowsMobile: featuredRowsMobile,
+      totalItems: featuredTotalItems,
+      sortBy: featuredSortBy,
+      autoSeconds: featuredAutoSeconds,
+    }
     let newSections: LayoutSection[]
     if (isEdit && editingFeaturedIndex !== null) {
       newSections = sections.map((s, i) =>
         i === editingFeaturedIndex
-          ? { ...s, categoryId, label: featuredLabel, subtitle: featuredSubtitle, moreAction: featuredMoreAction, showMoreButton: featuredShowMore, display: featuredDisplay, perRow: featuredPerRow, rows: featuredRows, autoSeconds: featuredAutoSeconds } as FeaturedSectionConfig
+          ? ({ ...s, ...common } as FeaturedSectionConfig)
           : s
       )
     } else {
@@ -206,15 +278,7 @@ export function LayoutManager({
         id,
         type: 'featured',
         visible: true,
-        categoryId,
-        label: featuredLabel,
-        subtitle: featuredSubtitle,
-        moreAction: featuredMoreAction,
-        showMoreButton: featuredShowMore,
-        display: featuredDisplay,
-        perRow: featuredPerRow,
-        rows: featuredRows,
-        autoSeconds: featuredAutoSeconds,
+        ...common,
       }
       newSections = [...sections, newSection]
     }
@@ -311,20 +375,11 @@ export function LayoutManager({
     setSaving(false)
   }
 
-  // 콘텐츠 추가/편집 후 즉시 저장 + iframe 새로고침 (DOM으로 흉내 낼 수 없는 변경)
-  const saveAndRefresh = async (newSections: LayoutSection[]) => {
+  // 콘텐츠 추가/편집: 미리보기(local state) 에만 반영하고 dirty 표시.
+  // 실제 저장은 사용자가 「변경사항 저장」 을 눌렀을 때만 이루어진다.
+  const saveAndRefresh = (newSections: LayoutSection[]) => {
     setSections(newSections)
-    setSaving(true)
-    setMessage(null)
-    const result = await saveLayout(siteId, newSections)
-    if (result.error) {
-      setMessage({ type: 'error', text: result.error })
-      setDirty(true)
-    } else {
-      setDirty(false)
-      setPreviewKey((k) => k + 1)
-    }
-    setSaving(false)
+    setDirty(true)
   }
 
   // iframe 안의 섹션 좌표 측정 → 오버레이 위치 동기화
@@ -343,6 +398,20 @@ export function LayoutManager({
       // offsetTop는 iframe document 기준 절대 y(스크롤 영향 없음); 가로는 viewport 기준이라 left는 0으로 가정
       next[id].left = 0
     })
+    // 헤더 네비게이션 좌표 측정 (admin 컨텍스트에서만 활용)
+    const navEl = doc.querySelector<HTMLElement>('[data-nav-widget]')
+    if (navEl) {
+      // body 기준 누적 offsetTop 으로 absolute 위치 계산
+      let top = 0
+      let cur: HTMLElement | null = navEl
+      while (cur) {
+        top += cur.offsetTop
+        cur = cur.offsetParent as HTMLElement | null
+      }
+      setNavRect({ top, height: navEl.offsetHeight })
+    } else {
+      setNavRect(null)
+    }
     // 전체 문서 높이도 갱신 (iframe 안 콘텐츠가 길어지면 따라가게)
     const docHeight = Math.max(
       doc.body?.scrollHeight ?? 0,
@@ -447,6 +516,10 @@ export function LayoutManager({
       setFeaturedDisplay(cfg.display || 'grid')
       setFeaturedPerRow(cfg.perRow || 4)
       setFeaturedRows(cfg.rows || 2)
+      setFeaturedPerRowMobile(cfg.perRowMobile ?? 2)
+      setFeaturedRowsMobile(cfg.rowsMobile ?? cfg.rows ?? 2)
+      setFeaturedTotalItems(cfg.totalItems ?? (cfg.perRow || 4) * (cfg.rows || 2))
+      setFeaturedSortBy(cfg.sortBy ?? 'created')
       setFeaturedAutoSeconds(cfg.autoSeconds || 0)
       setShowCatPickerInModal(false)
       setFeaturedTitleModal({ categoryId: cfg.categoryId || '', categoryName: cfg.label || '', isEdit: true })
@@ -690,6 +763,42 @@ export function LayoutManager({
 
             {/* 섹션 오버레이 — 저장된 페이지의 섹션 위에 컨트롤 표시 */}
             <div className="pointer-events-none absolute inset-0">
+              {/* 네비게이션 위젯 오버레이 — 헤더의 nav 영역 */}
+              {navRect && (
+                <div
+                  onMouseEnter={() => setHoveredNav(true)}
+                  onMouseLeave={() => setHoveredNav(false)}
+                  className={`pointer-events-auto absolute transition ${
+                    hoveredNav ? 'border-2 border-blue-500 bg-blue-500/5' : 'border-2 border-transparent hover:border-blue-300'
+                  }`}
+                  style={{ top: navRect.top, left: 0, width: '100%', height: navRect.height }}
+                >
+                  {/* 좌상단 타입 뱃지 */}
+                  <div className="absolute left-2 top-2 flex items-center gap-1">
+                    <span className="rounded bg-blue-500 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
+                      네비
+                    </span>
+                  </div>
+                  {/* 우상단 컨트롤 — 네비는 위/아래/숨김/삭제 없이 「편집」만 */}
+                  <div
+                    className={`absolute right-2 top-2 flex items-center gap-1 rounded-lg bg-white px-1 py-1 shadow-md ring-1 ring-zinc-200 transition ${
+                      hoveredNav ? 'opacity-100' : 'opacity-0'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={openNavEditor}
+                      className="flex cursor-pointer items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-blue-600 hover:bg-blue-50"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                      </svg>
+                      편집
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {sections.map((section, idx) => {
                 const rect = sectionRects[section.id]
                 if (!rect) return null
@@ -941,7 +1050,7 @@ export function LayoutManager({
       {/* 카테고리 선택 모달 (새 메인상품추출 추가 시) */}
       {showCategoryPicker && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="mx-4 max-h-[70vh] w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="mx-4 max-h-[80vh] w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="border-b border-zinc-100 px-6 py-4">
               <h3 className="text-lg font-semibold text-zinc-900">카테고리 선택</h3>
               <p className="mt-1 text-sm text-zinc-500">메인에 상품을 추출할 카테고리를 선택하세요</p>
@@ -969,7 +1078,7 @@ export function LayoutManager({
       {/* 게시판 선택 모달 (게시판 위젯 추가 시) */}
       {showBoardPicker && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="mx-4 max-h-[70vh] w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="mx-4 max-h-[80vh] w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="border-b border-zinc-100 px-6 py-4">
               <h3 className="text-lg font-semibold text-zinc-900">게시판 선택</h3>
               <p className="mt-1 text-sm text-zinc-500">메인에 추출할 게시판을 선택하세요</p>
@@ -1011,88 +1120,96 @@ export function LayoutManager({
       {/* 게시판 위젯 편집 모달 */}
       {editingBoardIndex !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="mx-4 max-h-[85vh] w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="mx-4 max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="border-b border-zinc-100 px-6 py-4">
               <h3 className="text-lg font-semibold text-zinc-900">
                 {editingBoardIndex === -1 ? '게시판 위젯 추가' : '게시판 위젯 편집'}
               </h3>
             </div>
-            <div className="max-h-[60vh] overflow-y-auto space-y-4 p-5">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600">게시판</label>
-                <select
-                  value={boardWidgetBoardId}
-                  onChange={(e) => setBoardWidgetBoardId(e.target.value)}
-                  className="w-full cursor-pointer rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                >
-                  {boards.map((b) => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600">제목</label>
-                <div className="rounded-lg border border-zinc-300">
-                  <InlineEditor value={boardWidgetLabel} onChange={setBoardWidgetLabel} />
-                </div>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600">부제 (선택)</label>
-                <div className="rounded-lg border border-zinc-300">
-                  <InlineEditor value={boardWidgetSubtitle} onChange={setBoardWidgetSubtitle} />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-600">한 줄에 (개)</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={8}
-                    value={boardWidgetPerRow}
-                    onChange={(e) => setBoardWidgetPerRow(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-600">줄 수</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={20}
-                    value={boardWidgetRows}
-                    onChange={(e) => setBoardWidgetRows(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                  />
-                </div>
-                <p className="col-span-2 -mt-1 text-[11px] text-zinc-400">
-                  총 {Math.max(1, boardWidgetPerRow) * Math.max(1, boardWidgetRows)}개 노출 ·{' '}
-                  {boardWidgetPerRow > 1 ? '그리드' : '리스트'} 형식
-                </p>
-              </div>
-              <div className="space-y-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5">
-                {[
-                  { key: 'more', label: '더보기 버튼 표시', state: boardWidgetShowMore, set: setBoardWidgetShowMore },
-                  { key: 'thumb', label: '썸네일 표시', state: boardWidgetShowThumb, set: setBoardWidgetShowThumb },
-                  { key: 'date', label: '작성일 표시', state: boardWidgetShowDate, set: setBoardWidgetShowDate },
-                ].map((opt) => (
-                  <label key={opt.key} className="flex cursor-pointer items-center justify-between gap-2 text-sm text-zinc-700">
-                    <span>{opt.label}</span>
-                    <button
-                      type="button"
-                      onClick={() => opt.set(!opt.state)}
-                      className={`relative inline-flex h-5 w-9 cursor-pointer items-center rounded-full transition ${
-                        opt.state ? 'bg-zinc-900' : 'bg-zinc-300'
-                      }`}
+            <div className="max-h-[70vh] overflow-y-auto p-5">
+              <div className="grid grid-cols-2 gap-4">
+                {/* 좌측 — 콘텐츠 */}
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600">게시판</label>
+                    <select
+                      value={boardWidgetBoardId}
+                      onChange={(e) => setBoardWidgetBoardId(e.target.value)}
+                      className="w-full cursor-pointer rounded-lg border border-zinc-300 px-3 py-2 text-sm"
                     >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition ${
-                          opt.state ? 'translate-x-4' : 'translate-x-0.5'
-                        }`}
+                      {boards.map((b) => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600">제목</label>
+                    <div className="rounded-lg border border-zinc-300">
+                      <InlineEditor value={boardWidgetLabel} onChange={setBoardWidgetLabel} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600">부제 (선택)</label>
+                    <div className="rounded-lg border border-zinc-300">
+                      <InlineEditor value={boardWidgetSubtitle} onChange={setBoardWidgetSubtitle} />
+                    </div>
+                  </div>
+                </div>
+                {/* 우측 — 레이아웃 + 옵션 */}
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-zinc-600">한 줄에 (개)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={8}
+                        value={boardWidgetPerRow}
+                        onChange={(e) => setBoardWidgetPerRow(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
                       />
-                    </button>
-                  </label>
-                ))}
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-zinc-600">줄 수</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={boardWidgetRows}
+                        onChange={(e) => setBoardWidgetRows(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-zinc-400">
+                    총 {Math.max(1, boardWidgetPerRow) * Math.max(1, boardWidgetRows)}개 노출 ·{' '}
+                    {boardWidgetPerRow > 1 ? '그리드' : '리스트'} 형식
+                  </p>
+                  <div className="space-y-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5">
+                    {[
+                      { key: 'more', label: '더보기 버튼 표시', state: boardWidgetShowMore, set: setBoardWidgetShowMore },
+                      { key: 'thumb', label: '썸네일 표시', state: boardWidgetShowThumb, set: setBoardWidgetShowThumb },
+                      { key: 'date', label: '작성일 표시', state: boardWidgetShowDate, set: setBoardWidgetShowDate },
+                    ].map((opt) => (
+                      <label key={opt.key} className="flex cursor-pointer items-center justify-between gap-2 text-sm text-zinc-700">
+                        <span>{opt.label}</span>
+                        <button
+                          type="button"
+                          onClick={() => opt.set(!opt.state)}
+                          className={`relative inline-flex h-5 w-9 cursor-pointer items-center rounded-full transition ${
+                            opt.state ? 'bg-zinc-900' : 'bg-zinc-300'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition ${
+                              opt.state ? 'translate-x-4' : 'translate-x-0.5'
+                            }`}
+                          />
+                        </button>
+                      </label>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
             <div className="flex gap-2 border-t border-zinc-100 bg-zinc-50 px-5 py-3">
@@ -1119,199 +1236,393 @@ export function LayoutManager({
       {/* 메인상품추출 타이틀 설정 모달 */}
       {featuredTitleModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="mx-4 w-full max-w-md rounded-2xl bg-white shadow-2xl">
+          <div className="mx-4 max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="border-b border-zinc-100 px-6 py-4">
               <h3 className="text-lg font-semibold text-zinc-900">메인상품추출 설정</h3>
               <p className="mt-1 text-sm text-zinc-500">카테고리, 제목, 더보기 동작을 한 번에 설정하세요</p>
             </div>
-            <div className="space-y-4 p-6">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">카테고리</label>
-                <div className="flex items-center justify-between rounded-lg border border-zinc-300 px-3 py-2">
-                  <span className="text-sm text-zinc-800">
-                    {allCategories.find((c) => c.id === featuredTitleModal.categoryId)?.name || '카테고리 미선택'}
+            <div className="max-h-[70vh] overflow-y-auto p-6">
+              {/* 실시간 미리보기 — PC/모바일 탭 토글 */}
+              <div className="mb-5 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">미리보기</span>
+                    {/* PC / 모바일 탭 */}
+                    <div className="inline-flex overflow-hidden rounded-lg border border-zinc-200 bg-white">
+                      <button
+                        type="button"
+                        onClick={() => setFeaturedPreviewTab('pc')}
+                        className={`flex cursor-pointer items-center gap-1 px-2.5 py-1 text-[11px] font-medium transition ${
+                          featuredPreviewTab === 'pc' ? 'bg-zinc-900 text-white' : 'text-zinc-500 hover:bg-zinc-50'
+                        }`}
+                      >
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                          <rect x="3" y="4" width="18" height="12" rx="2" />
+                          <path strokeLinecap="round" d="M8 20h8M12 16v4" />
+                        </svg>
+                        PC
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFeaturedPreviewTab('mobile')}
+                        className={`flex cursor-pointer items-center gap-1 px-2.5 py-1 text-[11px] font-medium transition ${
+                          featuredPreviewTab === 'mobile' ? 'bg-zinc-900 text-white' : 'text-zinc-500 hover:bg-zinc-50'
+                        }`}
+                      >
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                          <rect x="7" y="3" width="10" height="18" rx="2" />
+                          <path strokeLinecap="round" d="M11 18h2" />
+                        </svg>
+                        모바일
+                      </button>
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-zinc-400">
+                    {featuredSortBy === 'created' ? '등록순' : featuredSortBy === 'popular' ? '인기순' : featuredSortBy === 'priceAsc' ? '낮은 가격순' : '높은 가격순'}
+                    {' · '}총 {featuredTotalItems}개
+                    {' · '}{featuredDisplay === 'slider' ? '슬라이드' : '그리드'}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowCatPickerInModal((v) => !v)}
-                    className="rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
-                  >
-                    {showCatPickerInModal ? '닫기' : '변경'}
-                  </button>
                 </div>
-                {showCatPickerInModal && (
-                  <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-zinc-200 p-2">
-                    <CategoryTreePicker
-                      allCategories={allCategories}
-                      onSelect={(catId, catName) => {
-                        setFeaturedTitleModal((m) => (m ? { ...m, categoryId: catId, categoryName: catName } : m))
-                        setShowCatPickerInModal(false)
-                      }}
-                    />
+
+                {featuredPreviewTab === 'pc' ? (
+                  /* PC 미리보기 */
+                  <div className="rounded-lg border border-zinc-200 bg-white p-4">
+                    <div className="mb-3 px-0.5">
+                      <div className="text-sm font-semibold [&_p]:my-0" dangerouslySetInnerHTML={{ __html: featuredLabel || '<span class="text-zinc-300">타이틀</span>' }} />
+                      {featuredSubtitle && (
+                        <div className="mt-0.5 text-xs text-zinc-500 [&_p]:my-0" dangerouslySetInnerHTML={{ __html: featuredSubtitle }} />
+                      )}
+                    </div>
+                    <div
+                      className="grid gap-2"
+                      style={{ gridTemplateColumns: `repeat(${featuredPerRow}, minmax(0, 1fr))` }}
+                    >
+                      {Array.from({ length: Math.min(featuredTotalItems, featuredPerRow * featuredRows) }).map((_, i) => (
+                        <div key={i} className="space-y-1">
+                          <div className="aspect-square rounded bg-zinc-200" />
+                          <div className="h-2 w-3/4 rounded-full bg-zinc-200" />
+                          <div className="h-2 w-1/2 rounded-full bg-zinc-300" />
+                        </div>
+                      ))}
+                    </div>
+                    {featuredShowMore && (
+                      <div className="mt-4 text-center">
+                        <span className="inline-block rounded-md border border-zinc-400 px-4 py-1.5 text-xs text-zinc-600">
+                          더보기 {featuredMoreAction === 'expand' && '(펼치기)'}
+                        </span>
+                      </div>
+                    )}
+                    <p className="mt-3 text-center text-[10px] text-zinc-400">
+                      PC · 한 줄 {featuredPerRow}개 × {featuredRows}줄
+                    </p>
+                  </div>
+                ) : (
+                  /* 모바일 미리보기 — 폰 프레임 */
+                  <div className="flex justify-center py-2">
+                    <div className="w-[260px] rounded-3xl border-[6px] border-zinc-300 bg-white p-3 shadow-sm">
+                      <div className="mb-2 px-0.5">
+                        <div className="text-xs font-semibold [&_p]:my-0" dangerouslySetInnerHTML={{ __html: featuredLabel || '<span class="text-zinc-300">타이틀</span>' }} />
+                        {featuredSubtitle && (
+                          <div className="mt-0.5 text-[10px] text-zinc-500 [&_p]:my-0" dangerouslySetInnerHTML={{ __html: featuredSubtitle }} />
+                        )}
+                      </div>
+                      <div
+                        className="grid gap-1.5"
+                        style={{ gridTemplateColumns: `repeat(${featuredPerRowMobile}, minmax(0, 1fr))` }}
+                      >
+                        {Array.from({ length: Math.min(featuredTotalItems, featuredPerRowMobile * featuredRowsMobile) }).map((_, i) => (
+                          <div key={i} className="space-y-0.5">
+                            <div className="aspect-square rounded bg-zinc-200" />
+                            <div className="h-1.5 w-3/4 rounded-full bg-zinc-200" />
+                            <div className="h-1.5 w-1/2 rounded-full bg-zinc-300" />
+                          </div>
+                        ))}
+                      </div>
+                      {featuredShowMore && (
+                        <div className="mt-2.5 text-center">
+                          <span className="inline-block rounded border border-zinc-400 px-3 py-1 text-[10px] text-zinc-600">
+                            더보기
+                          </span>
+                        </div>
+                      )}
+                      <p className="mt-2.5 text-center text-[9px] text-zinc-400">
+                        모바일 · 한 줄 {featuredPerRowMobile}개 × {featuredRowsMobile}줄
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">타이틀</label>
-                <InlineEditor
-                  value={featuredLabel}
-                  onChange={setFeaturedLabel}
-                  placeholder="예: NEW ARRIVALS"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">서브타이틀</label>
-                <InlineEditor
-                  value={featuredSubtitle}
-                  onChange={setFeaturedSubtitle}
-                  placeholder="예: 새로 입고된 상품을 만나보세요"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">표시 형태</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setFeaturedDisplay('grid')}
-                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                      featuredDisplay === 'grid'
-                        ? 'border-zinc-900 bg-zinc-900 text-white'
-                        : 'border-zinc-300 text-zinc-600 hover:bg-zinc-50'
-                    }`}
-                  >
-                    단일 (그리드)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFeaturedDisplay('slider')}
-                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                      featuredDisplay === 'slider'
-                        ? 'border-zinc-900 bg-zinc-900 text-white'
-                        : 'border-zinc-300 text-zinc-600 hover:bg-zinc-50'
-                    }`}
-                  >
-                    슬라이드
-                  </button>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700">한 줄 갯수</label>
-                  <select
-                    value={featuredPerRow}
-                    onChange={(e) => setFeaturedPerRow(Number(e.target.value))}
-                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-900 focus:outline-none"
-                  >
-                    {[2, 3, 4, 5, 6].map((n) => (
-                      <option key={n} value={n}>{n}개</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700">줄 수</label>
-                  <select
-                    value={featuredRows}
-                    onChange={(e) => setFeaturedRows(Number(e.target.value))}
-                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-900 focus:outline-none"
-                  >
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <option key={n} value={n}>{n}줄</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <p className="text-xs text-zinc-400">
-                {featuredDisplay === 'slider'
-                  ? `슬라이드: 한 화면에 ${featuredPerRow}개씩 ${featuredRows}줄, 좌우 화살표로 넘깁니다.`
-                  : `단일: 한 줄에 ${featuredPerRow}개씩 ${featuredRows}줄 = 총 ${featuredPerRow * featuredRows}개 표시.`}
-              </p>
-              {featuredDisplay === 'slider' && (
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700">자동 넘김 (초)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={featuredAutoSeconds || ''}
-                    onChange={(e) => setFeaturedAutoSeconds(Math.max(0, Number(e.target.value) || 0))}
-                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-900 focus:outline-none"
-                    placeholder="0 (자동 넘김 끔)"
-                  />
-                  <p className="mt-1 text-xs text-zinc-400">
-                    {featuredAutoSeconds > 0
-                      ? `${featuredAutoSeconds}초마다 한 칸씩 자동으로 넘어갑니다. (마우스 올리면 멈춤)`
-                      : '0이면 자동 넘김 끄기 (화살표로만 이동).'}
-                  </p>
-                </div>
-              )}
-              <div className="flex items-center gap-3 rounded-lg border border-zinc-200 p-3">
-                <button
-                  type="button"
-                  onClick={() => setFeaturedShowMore(!featuredShowMore)}
-                  className={`relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors ${
-                    featuredShowMore ? 'bg-zinc-900' : 'bg-zinc-300'
-                  }`}
-                  aria-label="더보기 버튼 표시"
-                >
-                  <span
-                    className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                      featuredShowMore ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
-                <div>
-                  <p className="text-sm font-medium text-zinc-900">&apos;더보기&apos; 버튼 표시</p>
-                  <p className="text-xs text-zinc-400">
-                    {featuredShowMore
-                      ? '메인에 더보기 버튼이 표시됩니다.'
-                      : '꺼두면 더보기 버튼이 표시되지 않습니다.'}
-                  </p>
-                </div>
-              </div>
 
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">&apos;더보기&apos; 버튼 동작</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setFeaturedMoreAction('link')}
-                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                      featuredMoreAction === 'link'
-                        ? 'border-zinc-900 bg-zinc-900 text-white'
-                        : 'border-zinc-300 text-zinc-600 hover:bg-zinc-50'
-                    }`}
-                  >
-                    카테고리 페이지로 이동
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFeaturedMoreAction('expand')}
-                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                      featuredMoreAction === 'expand'
-                        ? 'border-zinc-900 bg-zinc-900 text-white'
-                        : 'border-zinc-300 text-zinc-600 hover:bg-zinc-50'
-                    }`}
-                  >
-                    이 자리에서 더 보기
-                  </button>
+              <div className="grid grid-cols-2 gap-5">
+                {/* 좌측 — 콘텐츠 + 진열 옵션 */}
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-zinc-700">카테고리</label>
+                    <div className="flex items-center justify-between rounded-lg border border-zinc-300 px-3 py-2">
+                      <span className="text-sm text-zinc-800">
+                        {allCategories.find((c) => c.id === featuredTitleModal.categoryId)?.name || '카테고리 미선택'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowCatPickerInModal((v) => !v)}
+                        className="cursor-pointer rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+                      >
+                        {showCatPickerInModal ? '닫기' : '변경'}
+                      </button>
+                    </div>
+                    {showCatPickerInModal && (
+                      <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-zinc-200 p-2">
+                        <CategoryTreePicker
+                          allCategories={allCategories}
+                          onSelect={(catId, catName) => {
+                            setFeaturedTitleModal((m) => (m ? { ...m, categoryId: catId, categoryName: catName } : m))
+                            setShowCatPickerInModal(false)
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-zinc-700">타이틀</label>
+                    <InlineEditor
+                      value={featuredLabel}
+                      onChange={setFeaturedLabel}
+                      placeholder="예: NEW ARRIVALS"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-zinc-700">서브타이틀</label>
+                    <InlineEditor
+                      value={featuredSubtitle}
+                      onChange={setFeaturedSubtitle}
+                      placeholder="예: 새로 입고된 상품을 만나보세요"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-zinc-700">진열 방식</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { v: 'created', label: '등록순' },
+                        { v: 'popular', label: '인기순' },
+                        { v: 'priceAsc', label: '낮은 가격순' },
+                        { v: 'priceDesc', label: '높은 가격순' },
+                      ].map((o) => (
+                        <button
+                          key={o.v}
+                          type="button"
+                          onClick={() => setFeaturedSortBy(o.v as 'created' | 'popular' | 'priceAsc' | 'priceDesc')}
+                          className={`cursor-pointer rounded-lg border px-2 py-2 text-xs font-medium transition ${
+                            featuredSortBy === o.v
+                              ? 'border-zinc-900 bg-zinc-900 text-white'
+                              : 'border-zinc-300 text-zinc-600 hover:bg-zinc-50'
+                          }`}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-zinc-700">진열 수</label>
+                      <select
+                        value={featuredTotalItems}
+                        onChange={(e) => setFeaturedTotalItems(Number(e.target.value))}
+                        className="w-full cursor-pointer rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-900 focus:outline-none"
+                      >
+                        {[4, 8, 12, 16, 20, 24, 28].map((n) => (
+                          <option key={n} value={n}>{n}개</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-zinc-700">표시 형태</label>
+                      <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-zinc-300">
+                        <button
+                          type="button"
+                          onClick={() => setFeaturedDisplay('grid')}
+                          className={`cursor-pointer py-2 text-xs font-medium transition ${
+                            featuredDisplay === 'grid'
+                              ? 'bg-zinc-900 text-white'
+                              : 'bg-white text-zinc-600 hover:bg-zinc-50'
+                          }`}
+                        >
+                          그리드
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFeaturedDisplay('slider')}
+                          className={`cursor-pointer py-2 text-xs font-medium transition ${
+                            featuredDisplay === 'slider'
+                              ? 'bg-zinc-900 text-white'
+                              : 'bg-white text-zinc-600 hover:bg-zinc-50'
+                          }`}
+                        >
+                          슬라이드
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <p className="mt-1 text-xs text-zinc-400">
-                  {featuredMoreAction === 'link'
-                    ? '더보기를 누르면 해당 카테고리 상품 페이지로 이동합니다.'
-                    : '더보기를 누르면 이 섹션에서 상품을 더 펼쳐서 보여줍니다.'}
-                </p>
+
+                {/* 우측 — PC/모바일 레이아웃 + 더보기 옵션 */}
+                <div className="space-y-4">
+                  {/* PC 레이아웃 */}
+                  <div className="rounded-lg border border-zinc-200 p-3">
+                    <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                        <rect x="3" y="4" width="18" height="12" rx="2" />
+                        <path strokeLinecap="round" d="M8 20h8M12 16v4" />
+                      </svg>
+                      PC
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-zinc-600">한 줄 갯수</label>
+                        <select
+                          value={featuredPerRow}
+                          onChange={(e) => setFeaturedPerRow(Number(e.target.value))}
+                          className="w-full cursor-pointer rounded-lg border border-zinc-300 px-2 py-1.5 text-sm focus:border-zinc-900 focus:outline-none"
+                        >
+                          {[2, 3, 4, 5, 6].map((n) => (
+                            <option key={n} value={n}>{n}개</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-zinc-600">줄 수</label>
+                        <select
+                          value={featuredRows}
+                          onChange={(e) => setFeaturedRows(Number(e.target.value))}
+                          className="w-full cursor-pointer rounded-lg border border-zinc-300 px-2 py-1.5 text-sm focus:border-zinc-900 focus:outline-none"
+                        >
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <option key={n} value={n}>{n}줄</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 모바일 레이아웃 */}
+                  <div className="rounded-lg border border-zinc-200 p-3">
+                    <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                        <rect x="7" y="3" width="10" height="18" rx="2" />
+                        <path strokeLinecap="round" d="M11 18h2" />
+                      </svg>
+                      모바일
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-zinc-600">한 줄 갯수</label>
+                        <select
+                          value={featuredPerRowMobile}
+                          onChange={(e) => setFeaturedPerRowMobile(Number(e.target.value))}
+                          className="w-full cursor-pointer rounded-lg border border-zinc-300 px-2 py-1.5 text-sm focus:border-zinc-900 focus:outline-none"
+                        >
+                          {[1, 2, 3, 4].map((n) => (
+                            <option key={n} value={n}>{n}개</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-zinc-600">줄 수</label>
+                        <select
+                          value={featuredRowsMobile}
+                          onChange={(e) => setFeaturedRowsMobile(Number(e.target.value))}
+                          className="w-full cursor-pointer rounded-lg border border-zinc-300 px-2 py-1.5 text-sm focus:border-zinc-900 focus:outline-none"
+                        >
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+                            <option key={n} value={n}>{n}줄</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {featuredDisplay === 'slider' && (
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-zinc-700">자동 넘김 (초)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={featuredAutoSeconds || ''}
+                        onChange={(e) => setFeaturedAutoSeconds(Math.max(0, Number(e.target.value) || 0))}
+                        className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-900 focus:outline-none"
+                        placeholder="0 (자동 넘김 끔)"
+                      />
+                      <p className="mt-1 text-xs text-zinc-400">
+                        {featuredAutoSeconds > 0
+                          ? `${featuredAutoSeconds}초마다 자동 전환`
+                          : '0이면 자동 넘김 끄기'}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-3 rounded-lg border border-zinc-200 p-3">
+                    <button
+                      type="button"
+                      onClick={() => setFeaturedShowMore(!featuredShowMore)}
+                      className={`relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors ${
+                        featuredShowMore ? 'bg-zinc-900' : 'bg-zinc-300'
+                      }`}
+                      aria-label="더보기 버튼 표시"
+                    >
+                      <span
+                        className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                          featuredShowMore ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-zinc-900">&apos;더보기&apos; 버튼 표시</p>
+                      <p className="truncate text-xs text-zinc-400">
+                        {featuredShowMore ? '메인에 표시됩니다.' : '표시되지 않습니다.'}
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-zinc-700">&apos;더보기&apos; 버튼 동작</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setFeaturedMoreAction('link')}
+                        className={`cursor-pointer rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                          featuredMoreAction === 'link'
+                            ? 'border-zinc-900 bg-zinc-900 text-white'
+                            : 'border-zinc-300 text-zinc-600 hover:bg-zinc-50'
+                        }`}
+                      >
+                        카테고리로 이동
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFeaturedMoreAction('expand')}
+                        className={`cursor-pointer rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                          featuredMoreAction === 'expand'
+                            ? 'border-zinc-900 bg-zinc-900 text-white'
+                            : 'border-zinc-300 text-zinc-600 hover:bg-zinc-50'
+                        }`}
+                      >
+                        여기서 더 보기
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="flex gap-3 border-t border-zinc-100 px-6 py-4">
+            <div className="flex gap-3 border-t border-zinc-100 bg-zinc-50 px-6 py-4">
               <button
                 onClick={() => { setFeaturedTitleModal(null); setEditingFeaturedIndex(null); setShowCatPickerInModal(false) }}
-                className="flex-1 rounded-lg border border-zinc-300 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
+                className="flex-1 cursor-pointer rounded-lg border border-zinc-300 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
               >
                 취소
               </button>
               <button
                 onClick={confirmFeaturedTitle}
-                className="flex-1 rounded-lg bg-zinc-900 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+                className="flex-1 cursor-pointer rounded-lg bg-zinc-900 py-2 text-sm font-medium text-white hover:bg-zinc-800"
               >
                 확인
               </button>
@@ -1323,104 +1634,109 @@ export function LayoutManager({
       {/* 카테고리 카드 편집 모달 */}
       {editingCategoryIndex !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="mx-4 max-h-[85vh] w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="mx-4 max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="border-b border-zinc-100 px-6 py-4">
               <h3 className="text-lg font-semibold text-zinc-900">카테고리 카드 편집</h3>
               <p className="mt-1 text-sm text-zinc-500">이름, 서브이름, 카드를 설정하세요</p>
             </div>
-            <div className="max-h-[55vh] overflow-y-auto p-4 space-y-3">
-              {/* 카테고리 이름 / 서브이름 */}
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">카테고리 이름</label>
-                <input
-                  type="text"
-                  value={categoryLabel}
-                  onChange={(e) => setCategoryLabel(e.target.value)}
-                  placeholder="예: CATEGORY"
-                  className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">서브 이름</label>
-                <input
-                  type="text"
-                  value={categorySubtitle}
-                  onChange={(e) => setCategorySubtitle(e.target.value)}
-                  placeholder="예: 카테고리별 상품을 만나보세요"
-                  className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-              </div>
-
-              {categoryCards.map((card, ci) => (
-                <div key={card.id} className="flex gap-3 rounded-lg border border-zinc-200 p-3">
-                  {/* 이미지 */}
-                  <div className="flex-shrink-0">
-                    <label className="block h-20 w-20 cursor-pointer overflow-hidden rounded-lg bg-zinc-100">
-                      {card.image ? (
-                        <img src={card.image} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        <span className="flex h-full items-center justify-center text-[10px] text-zinc-400">이미지</span>
-                      )}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0]
-                          if (!file) return
-                          setUploadingCardImage(true)
-                          const formData = new FormData()
-                          formData.set('file', file)
-                          const res = await fetch('/api/upload', { method: 'POST', body: formData })
-                          const result = await res.json()
-                          if (result.url) {
-                            setCategoryCards(prev => prev.map((c, i) => i === ci ? { ...c, image: result.url } : c))
-                          }
-                          setUploadingCardImage(false)
-                        }}
-                      />
-                    </label>
-                  </div>
-                  {/* 텍스트 + 링크 */}
-                  <div className="flex-1 space-y-2">
-                    <input
-                      type="text"
-                      value={card.text}
-                      onChange={(e) => setCategoryCards(prev => prev.map((c, i) => i === ci ? { ...c, text: e.target.value } : c))}
-                      placeholder="텍스트"
-                      className="w-full rounded border border-zinc-200 px-2 py-1.5 text-sm"
-                    />
-                    <input
-                      type="text"
-                      value={card.href}
-                      onChange={(e) => setCategoryCards(prev => prev.map((c, i) => i === ci ? { ...c, href: e.target.value } : c))}
-                      placeholder="링크 (예: /category/신발)"
-                      className="w-full rounded border border-zinc-200 px-2 py-1.5 text-sm"
-                    />
-                  </div>
-                  {/* 삭제 */}
-                  <button
-                    onClick={() => setCategoryCards(prev => prev.filter((_, i) => i !== ci))}
-                    className="flex-shrink-0 text-xs text-red-400 hover:text-red-600"
-                  >
-                    삭제
-                  </button>
+            <div className="max-h-[70vh] overflow-y-auto p-5">
+              {/* 카테고리 이름 / 서브이름 — 가로 2열 */}
+              <div className="mb-4 grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">카테고리 이름</label>
+                  <input
+                    type="text"
+                    value={categoryLabel}
+                    onChange={(e) => setCategoryLabel(e.target.value)}
+                    placeholder="예: CATEGORY"
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
                 </div>
-              ))}
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">서브 이름</label>
+                  <input
+                    type="text"
+                    value={categorySubtitle}
+                    onChange={(e) => setCategorySubtitle(e.target.value)}
+                    placeholder="예: 카테고리별 상품을 만나보세요"
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
 
-              {/* 카드 추가 */}
-              <button
-                type="button"
-                onClick={() => setCategoryCards(prev => [...prev, {
-                  id: `card-${Date.now()}`,
-                  image: '',
-                  text: '',
-                  href: '/',
-                }])}
-                className="w-full rounded-lg border-2 border-dashed border-zinc-300 py-3 text-sm text-zinc-500 hover:border-zinc-400"
-              >
-                + 카드 추가
-              </button>
+              <div className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-500">카드</div>
+              <div className="grid grid-cols-2 gap-3">
+                {categoryCards.map((card, ci) => (
+                  <div key={card.id} className="flex gap-3 rounded-lg border border-zinc-200 p-3">
+                    {/* 이미지 */}
+                    <div className="flex-shrink-0">
+                      <label className="block h-20 w-20 cursor-pointer overflow-hidden rounded-lg bg-zinc-100">
+                        {card.image ? (
+                          <img src={card.image} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          <span className="flex h-full items-center justify-center text-[10px] text-zinc-400">이미지</span>
+                        )}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+                            setUploadingCardImage(true)
+                            const formData = new FormData()
+                            formData.set('file', file)
+                            const res = await fetch('/api/upload', { method: 'POST', body: formData })
+                            const result = await res.json()
+                            if (result.url) {
+                              setCategoryCards(prev => prev.map((c, i) => i === ci ? { ...c, image: result.url } : c))
+                            }
+                            setUploadingCardImage(false)
+                          }}
+                        />
+                      </label>
+                    </div>
+                    {/* 텍스트 + 링크 */}
+                    <div className="flex-1 min-w-0 space-y-2">
+                      <input
+                        type="text"
+                        value={card.text}
+                        onChange={(e) => setCategoryCards(prev => prev.map((c, i) => i === ci ? { ...c, text: e.target.value } : c))}
+                        placeholder="텍스트"
+                        className="w-full rounded border border-zinc-200 px-2 py-1.5 text-sm"
+                      />
+                      <input
+                        type="text"
+                        value={card.href}
+                        onChange={(e) => setCategoryCards(prev => prev.map((c, i) => i === ci ? { ...c, href: e.target.value } : c))}
+                        placeholder="링크"
+                        className="w-full rounded border border-zinc-200 px-2 py-1.5 text-sm"
+                      />
+                    </div>
+                    {/* 삭제 */}
+                    <button
+                      onClick={() => setCategoryCards(prev => prev.filter((_, i) => i !== ci))}
+                      className="flex-shrink-0 cursor-pointer text-xs text-red-400 hover:text-red-600"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                ))}
+
+                {/* 카드 추가 */}
+                <button
+                  type="button"
+                  onClick={() => setCategoryCards(prev => [...prev, {
+                    id: `card-${Date.now()}`,
+                    image: '',
+                    text: '',
+                    href: '/',
+                  }])}
+                  className="cursor-pointer rounded-lg border-2 border-dashed border-zinc-300 py-6 text-sm text-zinc-500 hover:border-zinc-400"
+                >
+                  + 카드 추가
+                </button>
+              </div>
             </div>
             <div className="flex gap-3 border-t border-zinc-100 px-6 py-4">
               <button
@@ -1451,105 +1767,107 @@ export function LayoutManager({
       {/* 카드배너 그룹 편집 모달 */}
       {editingCardBannerIndex !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="mx-4 max-h-[85vh] w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="mx-4 max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="border-b border-zinc-100 px-6 py-4">
               <h3 className="text-lg font-semibold text-zinc-900">카드배너 그룹 편집</h3>
               <p className="mt-1 text-sm text-zinc-500">그룹명, 이미지, 텍스트, 링크를 설정하세요</p>
             </div>
-            <div className="max-h-[55vh] overflow-y-auto p-4 space-y-3">
-              {/* 그룹명 */}
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">그룹명</label>
-                <input
-                  type="text"
-                  value={cardBannerLabel}
-                  onChange={(e) => setCardBannerLabel(e.target.value)}
-                  placeholder="예: 신상품, 추천 아이템"
-                  className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-              </div>
-
-              {/* 카드 높이 */}
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">카드 높이 (px)</label>
-                <input
-                  type="number"
-                  value={cardBannerHeight}
-                  onChange={(e) => setCardBannerHeight(parseInt(e.target.value) || 100)}
-                  min={50}
-                  max={300}
-                  className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-                <p className="mt-1 text-xs text-zinc-400">PC 기준 높이입니다. 모바일은 80% 크기로 표시됩니다.</p>
-              </div>
-
-              {/* 카드 목록 */}
-              {categoryCards.map((card, ci) => (
-                <div key={card.id} className="flex gap-3 rounded-lg border border-zinc-200 p-3">
-                  <div className="flex-shrink-0">
-                    <label className="block h-20 w-20 cursor-pointer overflow-hidden rounded-lg bg-zinc-100">
-                      {card.image ? (
-                        <img src={card.image} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        <span className="flex h-full items-center justify-center text-[10px] text-zinc-400">이미지</span>
-                      )}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0]
-                          if (!file) return
-                          setUploadingCardImage(true)
-                          const formData = new FormData()
-                          formData.set('file', file)
-                          const res = await fetch('/api/upload', { method: 'POST', body: formData })
-                          const result = await res.json()
-                          if (result.url) {
-                            setCategoryCards(prev => prev.map((c, i) => i === ci ? { ...c, image: result.url } : c))
-                          }
-                          setUploadingCardImage(false)
-                        }}
-                      />
-                    </label>
-                  </div>
-                  <div className="flex-1 space-y-2">
-                    <input
-                      type="text"
-                      value={card.text}
-                      onChange={(e) => setCategoryCards(prev => prev.map((c, i) => i === ci ? { ...c, text: e.target.value } : c))}
-                      placeholder="텍스트"
-                      className="w-full rounded border border-zinc-200 px-2 py-1.5 text-sm"
-                    />
-                    <input
-                      type="text"
-                      value={card.href}
-                      onChange={(e) => setCategoryCards(prev => prev.map((c, i) => i === ci ? { ...c, href: e.target.value } : c))}
-                      placeholder="링크 (예: /category/신발)"
-                      className="w-full rounded border border-zinc-200 px-2 py-1.5 text-sm"
-                    />
-                  </div>
-                  <button
-                    onClick={() => setCategoryCards(prev => prev.filter((_, i) => i !== ci))}
-                    className="flex-shrink-0 text-xs text-red-400 hover:text-red-600"
-                  >
-                    삭제
-                  </button>
+            <div className="max-h-[70vh] overflow-y-auto p-5">
+              {/* 그룹명 / 카드 높이 — 가로 2열 */}
+              <div className="mb-4 grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">그룹명</label>
+                  <input
+                    type="text"
+                    value={cardBannerLabel}
+                    onChange={(e) => setCardBannerLabel(e.target.value)}
+                    placeholder="예: 신상품, 추천 아이템"
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
                 </div>
-              ))}
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">카드 높이 (px)</label>
+                  <input
+                    type="number"
+                    value={cardBannerHeight}
+                    onChange={(e) => setCardBannerHeight(parseInt(e.target.value) || 100)}
+                    min={50}
+                    max={300}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                  <p className="mt-1 text-xs text-zinc-400">모바일은 80% 크기로 표시됩니다.</p>
+                </div>
+              </div>
 
-              <button
-                type="button"
-                onClick={() => setCategoryCards(prev => [...prev, {
-                  id: `card-${Date.now()}`,
-                  image: '',
-                  text: '',
-                  href: '/',
-                }])}
-                className="w-full rounded-lg border-2 border-dashed border-zinc-300 py-3 text-sm text-zinc-500 hover:border-zinc-400"
-              >
-                + 카드 추가
-              </button>
+              <div className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-500">카드</div>
+              <div className="grid grid-cols-2 gap-3">
+                {categoryCards.map((card, ci) => (
+                  <div key={card.id} className="flex gap-3 rounded-lg border border-zinc-200 p-3">
+                    <div className="flex-shrink-0">
+                      <label className="block h-20 w-20 cursor-pointer overflow-hidden rounded-lg bg-zinc-100">
+                        {card.image ? (
+                          <img src={card.image} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          <span className="flex h-full items-center justify-center text-[10px] text-zinc-400">이미지</span>
+                        )}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+                            setUploadingCardImage(true)
+                            const formData = new FormData()
+                            formData.set('file', file)
+                            const res = await fetch('/api/upload', { method: 'POST', body: formData })
+                            const result = await res.json()
+                            if (result.url) {
+                              setCategoryCards(prev => prev.map((c, i) => i === ci ? { ...c, image: result.url } : c))
+                            }
+                            setUploadingCardImage(false)
+                          }}
+                        />
+                      </label>
+                    </div>
+                    <div className="flex-1 min-w-0 space-y-2">
+                      <input
+                        type="text"
+                        value={card.text}
+                        onChange={(e) => setCategoryCards(prev => prev.map((c, i) => i === ci ? { ...c, text: e.target.value } : c))}
+                        placeholder="텍스트"
+                        className="w-full rounded border border-zinc-200 px-2 py-1.5 text-sm"
+                      />
+                      <input
+                        type="text"
+                        value={card.href}
+                        onChange={(e) => setCategoryCards(prev => prev.map((c, i) => i === ci ? { ...c, href: e.target.value } : c))}
+                        placeholder="링크"
+                        className="w-full rounded border border-zinc-200 px-2 py-1.5 text-sm"
+                      />
+                    </div>
+                    <button
+                      onClick={() => setCategoryCards(prev => prev.filter((_, i) => i !== ci))}
+                      className="flex-shrink-0 cursor-pointer text-xs text-red-400 hover:text-red-600"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() => setCategoryCards(prev => [...prev, {
+                    id: `card-${Date.now()}`,
+                    image: '',
+                    text: '',
+                    href: '/',
+                  }])}
+                  className="cursor-pointer rounded-lg border-2 border-dashed border-zinc-300 py-6 text-sm text-zinc-500 hover:border-zinc-400"
+                >
+                  + 카드 추가
+                </button>
+              </div>
             </div>
             <div className="flex gap-3 border-t border-zinc-100 px-6 py-4">
               <button
@@ -1592,10 +1910,108 @@ export function LayoutManager({
         </div>
       )}
 
+      {/* 네비게이션 위젯 편집 모달 */}
+      {editingNav && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-zinc-100 px-6 py-4">
+              <h3 className="text-lg font-semibold text-zinc-900">네비게이션 메뉴 편집</h3>
+              <p className="mt-1 text-sm text-zinc-500">메인 네비게이션의 폰트와 색상을 설정합니다</p>
+            </div>
+            <div className="p-5">
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600">
+                    폰트 크기(px) <span className="text-zinc-400">· 10–24</span>
+                  </label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={navFontSize}
+                    onChange={(e) => setNavFontSize(e.target.value)}
+                    onBlur={() => setNavFontSize(String(normalizeNavFontSize(navFontSize)))}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600">글자색</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={navColor}
+                      onChange={(e) => setNavColor(e.target.value)}
+                      className="h-9 w-9 shrink-0 cursor-pointer rounded border border-zinc-300"
+                    />
+                    <input
+                      type="text"
+                      value={navColor}
+                      onChange={(e) => setNavColor(e.target.value)}
+                      className="w-full rounded-lg border border-zinc-300 px-2 py-2 text-xs font-mono"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600">호버 색상</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={navHoverColor}
+                      onChange={(e) => setNavHoverColor(e.target.value)}
+                      className="h-9 w-9 shrink-0 cursor-pointer rounded border border-zinc-300"
+                    />
+                    <input
+                      type="text"
+                      value={navHoverColor}
+                      onChange={(e) => setNavHoverColor(e.target.value)}
+                      className="w-full rounded-lg border border-zinc-300 px-2 py-2 text-xs font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+              {/* 실시간 미리보기 */}
+              <div className="mt-4 flex items-center justify-between rounded-lg border border-zinc-100 bg-zinc-50 px-4 py-2.5">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">미리보기</span>
+                <span
+                  className="font-bold transition-colors hover:[color:var(--nav-hover)]"
+                  style={{
+                    fontSize: `${parseInt(navFontSize) || 13}px`,
+                    color: navColor,
+                    ['--nav-hover' as string]: navHoverColor,
+                  }}
+                >
+                  샘플 메뉴 — 마우스를 올려보세요
+                </span>
+              </div>
+            </div>
+            <div className="flex gap-2 border-t border-zinc-100 bg-zinc-50 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setEditingNav(false)}
+                className="flex-1 cursor-pointer rounded-lg border border-zinc-300 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveNavStyle}
+                disabled={navSaving}
+                className="flex-1 cursor-pointer rounded-lg bg-zinc-900 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+              >
+                {navSaving ? '저장 중…' : '저장'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 단순 위젯 편집 모달 (가로선 / 텍스트 / 여백) */}
       {editingWidget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="mx-4 max-h-[85vh] w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div
+            className={`mx-4 max-h-[90vh] w-full overflow-hidden rounded-2xl bg-white shadow-2xl ${
+              editingWidget.type === 'text' ? 'max-w-3xl' : 'max-w-2xl'
+            }`}
+          >
             <div className="border-b border-zinc-100 px-6 py-4">
               <h3 className="text-lg font-semibold text-zinc-900">
                 {editingWidget.type === 'divider' && (editingWidget.idx === -1 ? '가로선 추가' : '가로선 편집')}
@@ -1603,7 +2019,7 @@ export function LayoutManager({
                 {editingWidget.type === 'spacer' && (editingWidget.idx === -1 ? '여백 추가' : '여백 편집')}
               </h3>
             </div>
-            <div className="max-h-[60vh] overflow-y-auto p-5 space-y-4">
+            <div className="max-h-[70vh] overflow-y-auto p-5 space-y-4">
               {editingWidget.type === 'divider' && (
                 <>
                   <div className="grid grid-cols-2 gap-3">

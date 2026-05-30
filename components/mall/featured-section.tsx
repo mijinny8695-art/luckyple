@@ -10,6 +10,10 @@ export async function FeaturedSection({
   display = 'grid',
   perRow = 4,
   rows = 2,
+  perRowMobile = 2,
+  rowsMobile,
+  totalItems,
+  sortBy = 'created',
   autoSeconds = 0,
 }: {
   categoryId: string
@@ -20,6 +24,10 @@ export async function FeaturedSection({
   display?: 'grid' | 'slider'
   perRow?: number
   rows?: number
+  perRowMobile?: number
+  rowsMobile?: number
+  totalItems?: number
+  sortBy?: 'created' | 'popular' | 'priceAsc' | 'priceDesc'
   autoSeconds?: number
 }) {
   const supabase = await createClient()
@@ -56,16 +64,32 @@ export async function FeaturedSection({
 
   if (allNos.length === 0) return null
 
-  // 한 줄 갯수 × 줄 수 = 기본 노출 수. 슬라이드/펼치기는 더 가져와서 스크롤·확장에 사용
-  const base = Math.max(1, perRow * rows)
+  // 진열 수: totalItems 우선, 없으면 perRow*rows 기본
+  const base = Math.max(1, totalItems ?? perRow * rows)
+  // 슬라이드/펼치기는 더 가져옴
   const limit = display === 'slider' || moreAction === 'expand' ? Math.max(base, 40) : base
-  const { data: products } = await supabase
+
+  // 정렬
+  let query = supabase
     .from('products')
     .select('id, name, slug, price, thumbnail_url')
     .overlaps('category_nos', allNos)
     .eq('is_active', true)
-    .order('product_no', { ascending: false, nullsFirst: false })
-    .limit(limit)
+
+  if (sortBy === 'popular') {
+    query = query
+      .order('view_count', { ascending: false })
+      .order('product_no', { ascending: false, nullsFirst: false })
+  } else if (sortBy === 'priceAsc') {
+    query = query.order('price', { ascending: true })
+  } else if (sortBy === 'priceDesc') {
+    query = query.order('price', { ascending: false })
+  } else {
+    // 등록순 (기본) — product_no 내림차순
+    query = query.order('product_no', { ascending: false, nullsFirst: false })
+  }
+
+  const { data: products } = await query.limit(limit)
 
   if (!products || products.length === 0) return null
 
@@ -83,6 +107,9 @@ export async function FeaturedSection({
           display={display}
           perRow={perRow}
           rows={rows}
+          perRowMobile={perRowMobile}
+          rowsMobile={rowsMobile ?? rows}
+          totalItems={base}
           autoSeconds={autoSeconds}
           categoryHref={`/category/${self?.slug || categoryId}`}
           fromCategoryId={categoryId}
