@@ -33,6 +33,7 @@ export function MemberSettingsForm({
   const [socialTerms, setSocialTerms] = useState(initial.social_signup_require_terms)
   const [allIncludesOptional, setAllIncludesOptional] = useState(initial.terms_all_includes_optional)
   const [signupNotice, setSignupNotice] = useState(initial.signup_notice)
+  const [signupBonus, setSignupBonus] = useState(String(initial.signup_bonus_points ?? 0))
   const [fields, setFields] = useState(initial.signup_fields)
 
   function updateField(key: FieldKey, patch: Partial<{ use: boolean; required: boolean }>) {
@@ -53,6 +54,7 @@ export function MemberSettingsForm({
       social_signup_require_terms: socialTerms,
       terms_all_includes_optional: allIncludesOptional,
       signup_notice: signupNotice,
+      signup_bonus_points: Math.max(0, parseInt(signupBonus) || 0),
       signup_fields: fields,
     })
     setSaving(false)
@@ -134,6 +136,26 @@ export function MemberSettingsForm({
                 <span className="text-sm text-zinc-800">전체 약관 동의 클릭 시 선택 항목까지 동의 체크하기</span>
               </label>
             </div>
+          </Row>
+
+          {/* 가입 보너스 포인트 */}
+          <Row label="가입 보너스">
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={signupBonus}
+                onChange={(e) => setSignupBonus(e.target.value)}
+                onBlur={() => setSignupBonus(String(Math.max(0, parseInt(signupBonus) || 0)))}
+                placeholder="0"
+                className="h-10 w-32 rounded-lg border border-zinc-300 px-3 text-right font-mono text-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+              />
+              <span className="text-sm text-zinc-500">포인트</span>
+            </div>
+            <p className="mt-1 text-xs text-zinc-500">
+              회원가입 직후 자동으로 지급됩니다. 0이면 지급하지 않습니다.
+            </p>
           </Row>
 
           {/* 가입안내 */}

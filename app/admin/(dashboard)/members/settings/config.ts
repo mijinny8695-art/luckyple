@@ -21,6 +21,7 @@ export type MemberSettings = {
   social_signup_require_terms: boolean
   terms_all_includes_optional: boolean
   signup_notice: string
+  signup_bonus_points: number
   signup_fields: SignupFields
 }
 
@@ -68,6 +69,7 @@ export function getMemberSettings(site: Site): MemberSettings {
     social_signup_require_terms: s.social_signup_require_terms ?? true,
     terms_all_includes_optional: s.terms_all_includes_optional ?? true,
     signup_notice: s.signup_notice ?? '',
+    signup_bonus_points: s.signup_bonus_points ?? 0,
     signup_fields: fields,
   }
 }

@@ -25,6 +25,7 @@ const FALLBACK: MemberSettings = {
   social_signup_require_terms: true,
   terms_all_includes_optional: true,
   signup_notice: '',
+  signup_bonus_points: 0,
   signup_fields: DEFAULT_FIELDS,
 }
 
@@ -34,6 +35,7 @@ type RawRow = {
   social_signup_require_terms?: boolean | null
   terms_all_includes_optional?: boolean | null
   signup_notice?: string | null
+  signup_bonus_points?: number | null
   signup_fields?: Partial<SignupFields> | null
 }
 
@@ -51,6 +53,7 @@ function fromRow(row: RawRow | null): MemberSettings {
     social_signup_require_terms: row.social_signup_require_terms ?? true,
     terms_all_includes_optional: row.terms_all_includes_optional ?? true,
     signup_notice: row.signup_notice ?? '',
+    signup_bonus_points: row.signup_bonus_points ?? 0,
     signup_fields: fields,
   }
 }
@@ -62,7 +65,7 @@ export const getCurrentMemberSettings = cache(async (): Promise<MemberSettings> 
   const supabase = await createClient()
   const { data } = await supabase
     .from('sites')
-    .select('login_enabled, terms_mode, social_signup_require_terms, terms_all_includes_optional, signup_notice, signup_fields')
+    .select('login_enabled, terms_mode, social_signup_require_terms, terms_all_includes_optional, signup_notice, signup_bonus_points, signup_fields')
     .eq('domain', host)
     .single()
 
@@ -70,7 +73,7 @@ export const getCurrentMemberSettings = cache(async (): Promise<MemberSettings> 
 
   const { data: fallback } = await supabase
     .from('sites')
-    .select('login_enabled, terms_mode, social_signup_require_terms, terms_all_includes_optional, signup_notice, signup_fields')
+    .select('login_enabled, terms_mode, social_signup_require_terms, terms_all_includes_optional, signup_notice, signup_bonus_points, signup_fields')
     .limit(1)
     .single()
 

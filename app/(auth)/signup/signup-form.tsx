@@ -179,23 +179,7 @@ const LABEL: Record<FieldKey, string> = {
 
 function renderField(key: FieldKey, required: boolean) {
   if (key === 'gender') {
-    return (
-      <div key={key}>
-        <Label htmlFor="gender" required={required}>성별</Label>
-        <select
-          id="gender"
-          name="gender"
-          required={required}
-          defaultValue=""
-          className="w-full rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
-        >
-          <option value="" disabled>선택</option>
-          <option value="male">남성</option>
-          <option value="female">여성</option>
-          <option value="other">기타</option>
-        </select>
-      </div>
-    )
+    return <GenderField key={key} required={required} />
   }
   if (key === 'address') {
     return <AddressFields key={key} required={required} />
@@ -265,6 +249,52 @@ function Label({
       {children}
       {required && <span className="ml-1 text-rose-500">*</span>}
     </label>
+  )
+}
+
+function GenderField({ required }: { required: boolean }) {
+  const [value, setValue] = useState<'male' | 'female' | ''>('')
+
+  const baseBtn =
+    'flex h-11 flex-1 items-center justify-center gap-1.5 rounded-lg border text-sm font-medium transition'
+
+  return (
+    <div>
+      <Label htmlFor="gender" required={required}>성별</Label>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => setValue('male')}
+          className={`${baseBtn} ${
+            value === 'male'
+              ? 'border-blue-600 bg-blue-50 text-blue-700'
+              : 'border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50'
+          }`}
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+            <circle cx="10" cy="14" r="5" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M14 10l5-5m0 0h-4m4 0v4" />
+          </svg>
+          남자
+        </button>
+        <button
+          type="button"
+          onClick={() => setValue('female')}
+          className={`${baseBtn} ${
+            value === 'female'
+              ? 'border-rose-500 bg-rose-50 text-rose-600'
+              : 'border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50'
+          }`}
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+            <circle cx="12" cy="9" r="5" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 14v7m-3-3h6" />
+          </svg>
+          여자
+        </button>
+      </div>
+      <input type="hidden" name="gender" value={value} />
+    </div>
   )
 }
 

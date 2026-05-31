@@ -9,6 +9,7 @@ import { getCachedCategories } from '@/lib/site'
 import { HeaderSearch } from './header-search'
 import { NotificationBell } from './notification-bell'
 import { getMyNotifications } from '@/lib/notifications-client-actions'
+import { getCurrentMemberSettings } from '@/lib/member-settings'
 
 export async function Header({
   siteName,
@@ -53,6 +54,9 @@ export async function Header({
   // 알림 (로그인 시만)
   const notifications = user ? await getMyNotifications(30) : { list: [], unread: 0 }
 
+  // 가입 보너스 포인트 (비로그인 + 0 초과인 경우만 말풍선 노출)
+  const signupBonus = user ? 0 : (await getCurrentMemberSettings()).signup_bonus_points
+
   const items = navItems && navItems.length > 0 ? navItems : []
 
   return (
@@ -85,7 +89,7 @@ export async function Header({
           {/* 우측 — PC: 메뉴 + 알림 / 모바일: 알림 + 카트 */}
           <div className="justify-self-end">
             <div className="hidden items-center gap-4 md:flex">
-              <HeaderAuth user={user} isAdmin={isAdmin} />
+              <HeaderAuth user={user} isAdmin={isAdmin} signupBonus={signupBonus} />
               {user && (
                 <NotificationBell initialList={notifications.list} initialUnread={notifications.unread} />
               )}

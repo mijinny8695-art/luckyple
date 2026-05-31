@@ -22,6 +22,7 @@ export async function updateMemberSettings(siteId: string, settings: MemberSetti
       social_signup_require_terms: settings.social_signup_require_terms,
       terms_all_includes_optional: settings.terms_all_includes_optional,
       signup_notice: settings.signup_notice.trim() || null,
+      signup_bonus_points: Math.max(0, Math.floor(settings.signup_bonus_points || 0)),
       signup_fields: settings.signup_fields,
     })
     .eq('id', siteId)
