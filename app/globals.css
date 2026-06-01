@@ -21,6 +21,19 @@ body {
   font-family: Helvetica, 'KoPub Dotum', KoPubDotum, sans-serif;
 }
 
+/* 클릭 가능한 요소 기본 커서 */
+a,
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+label[for],
+summary {
+  cursor: pointer;
+}
+button:disabled,
+[role="button"][aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
 /* TipTap 에디터 이미지 선택 표시 */
 .ProseMirror img.ProseMirror-selectednode {
   outline: 3px solid #3b82f6;

@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
 import type { NavItem, NavSubItem } from '@/lib/types/design'
+import { Spinner } from '@/components/spinner'
 
 type Category = { id: string; name: string; slug: string | null; parent_id: string | null; level: number }
 
@@ -25,6 +26,7 @@ export function MobileMenu({
   const [open, setOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [loggingOut, setLoggingOut] = useState(false)
   const router = useRouter()
 
   function toggleExpand(key: string) {
@@ -41,6 +43,8 @@ export function MobileMenu({
   }, [])
 
   async function handleLogout() {
+    if (loggingOut) return
+    setLoggingOut(true)
     const supabase = createClient()
     await supabase.auth.signOut()
     setOpen(false)
@@ -76,7 +80,14 @@ export function MobileMenu({
                 <Link href="/mypage/points" onClick={close} className="block text-[13px] text-zinc-700">포인트</Link>
                 <Link href="/mypage/inquiry" onClick={close} className="block text-[13px] text-zinc-700">1:1 문의</Link>
                 <Link href="/cart" onClick={close} className="block text-[13px] text-zinc-700">장바구니</Link>
-                <button onClick={handleLogout} className="block text-[13px] text-zinc-500">로그아웃</button>
+                <button
+                  onClick={handleLogout}
+                  disabled={loggingOut}
+                  className="inline-flex items-center gap-1.5 text-[13px] text-zinc-500 disabled:opacity-60"
+                >
+                  {loggingOut && <Spinner className="h-3 w-3" />}
+                  {loggingOut ? '로그아웃 중...' : '로그아웃'}
+                </button>
               </div>
             ) : (
               <div className="space-y-3">

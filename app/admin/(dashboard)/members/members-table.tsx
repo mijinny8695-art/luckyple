@@ -13,6 +13,7 @@ import {
   type PointHistoryEntry,
 } from './actions'
 import { type MemberSettings } from './settings/config'
+import { assignMemberGroup, type MemberGroup } from './groups/actions'
 import { formatRelativeTime } from '@/lib/relative-time'
 
 const SOURCE_LABEL: Record<string, { label: string; color: string }> = {
@@ -27,9 +28,11 @@ export function MembersTable({
   members,
   // settings는 추후 동적 컬럼용으로 유지 (현재 디자인에서는 사용 안 함)
   settings: _settings,
+  groups,
 }: {
   members: Member[]
   settings: MemberSettings | null
+  groups: MemberGroup[]
 }) {
   void _settings
   const router = useRouter()
@@ -37,6 +40,26 @@ export function MembersTable({
   const [memoEditing, setMemoEditing] = useState<Member | null>(null)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [openGroupCellId, setOpenGroupCellId] = useState<string | null>(null)
+  const [bulkApplying, setBulkApplying] = useState(false)
+
+  async function applyGroupToSelected(groupId: string | null) {
+    const ids = [...selectedIds]
+    if (ids.length === 0) return
+    setBulkApplying(true)
+    for (const id of ids) {
+      await assignMemberGroup(id, groupId)
+    }
+    setBulkApplying(false)
+    setSelectedIds(new Set())
+    router.refresh()
+  }
+
+  async function applyGroupToOne(memberId: string, groupId: string | null) {
+    setOpenGroupCellId(null)
+    await assignMemberGroup(memberId, groupId)
+    router.refresh()
+  }
 
   const allChecked = members.length > 0 && selectedIds.size === members.length
   const someChecked = selectedIds.size > 0 && selectedIds.size < members.length
@@ -55,8 +78,51 @@ export function MembersTable({
 
   return (
     <>
-      <div className="mb-3 text-sm text-zinc-600">
-        전체 사용자 <span className="font-semibold text-blue-600">{members.length}</span>명
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <span className="text-sm text-zinc-600">
+          전체 사용자 <span className="font-semibold text-blue-600">{members.length}</span>명
+        </span>
+
+        {/* 선택 일괄 그룹 적용 바 */}
+        {selectedIds.size > 0 && (
+          <div className="ml-auto flex items-center gap-2 rounded-lg bg-zinc-900 px-3 py-1.5 text-white shadow-md">
+            <span className="text-xs">
+              <span className="font-semibold">{selectedIds.size}</span>명 선택
+            </span>
+            <span className="text-xs text-zinc-400">·</span>
+            <span className="text-xs text-zinc-300">그룹 지정</span>
+            <select
+              defaultValue=""
+              disabled={bulkApplying}
+              onChange={(e) => {
+                const v = e.target.value
+                if (v === '') return
+                applyGroupToSelected(v === '__none' ? null : v)
+                e.target.value = ''
+              }}
+              className="h-8 rounded-md border border-zinc-700 bg-zinc-800 px-2 text-xs text-white focus:outline-none"
+            >
+              <option value="" disabled>
+                {bulkApplying ? '적용 중...' : '그룹 선택...'}
+              </option>
+              <option value="__none">그룹없음</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="rounded p-1 text-zinc-300 hover:bg-zinc-800 hover:text-white"
+              title="선택 해제"
+              aria-label="선택 해제"
+            >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="overflow-hidden rounded-xl bg-white shadow-sm">
@@ -83,6 +149,7 @@ export function MembersTable({
                   <Th>닉네임</Th>
                   <Th>계정</Th>
                   <Th>회원 유형</Th>
+                  <Th>그룹</Th>
                   <Th>가입일</Th>
                   <Th align="right">적립금</Th>
                   <Th>글/댓글/구매평/문의</Th>
@@ -134,6 +201,18 @@ export function MembersTable({
                         >
                           {member.role === 'admin' ? '관리자' : '일반회원'}
                         </button>
+                      </td>
+                      <td className="px-4 py-3.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <GroupCellPicker
+                          isOpen={openGroupCellId === member.id}
+                          onToggle={() =>
+                            setOpenGroupCellId(openGroupCellId === member.id ? null : member.id)
+                          }
+                          onClose={() => setOpenGroupCellId(null)}
+                          current={member.group ?? null}
+                          groups={groups}
+                          onChange={(gid) => applyGroupToOne(member.id, gid)}
+                        />
                       </td>
                       <td className="px-4 py-3.5 text-zinc-600 whitespace-nowrap">
                         {formatRelativeTime(member.created_at)}
@@ -217,6 +296,141 @@ export function MembersTable({
           }}
         />
       )}
+    </>
+  )
+}
+
+function GroupCellPicker({
+  isOpen,
+  onToggle,
+  onClose,
+  current,
+  groups,
+  onChange,
+}: {
+  isOpen: boolean
+  onToggle: () => void
+  onClose: () => void
+  current: { id: string; name: string; color: string } | null
+  groups: MemberGroup[]
+  onChange: (groupId: string | null) => void
+}) {
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+
+  useEffect(() => {
+    if (!isOpen || !btnRef.current) {
+      setPos(null)
+      return
+    }
+    const rect = btnRef.current.getBoundingClientRect()
+    const MENU_W = 200
+    const MENU_H_GUESS = Math.min(320, 56 + groups.length * 36)
+    let left = rect.left
+    let top = rect.bottom + 4
+    if (left + MENU_W > window.innerWidth - 8) left = window.innerWidth - MENU_W - 8
+    if (top + MENU_H_GUESS > window.innerHeight - 8) top = rect.top - MENU_H_GUESS - 4
+    setPos({ top, left })
+  }, [isOpen, groups.length])
+
+  useEffect(() => {
+    if (!isOpen) return
+    function handler(e: MouseEvent) {
+      const t = e.target as Node
+      if (btnRef.current?.contains(t)) return
+      if (menuRef.current?.contains(t)) return
+      onClose()
+    }
+    function close() {
+      onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [isOpen, onClose])
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={onToggle}
+        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition hover:opacity-80"
+        style={
+          current
+            ? { backgroundColor: current.color + '20', color: current.color }
+            : { backgroundColor: '#f4f4f5', color: '#a1a1aa' }
+        }
+        title="클릭해서 그룹 변경"
+      >
+        <span
+          className="h-1.5 w-1.5 rounded-full"
+          style={{ backgroundColor: current ? current.color : '#d4d4d8' }}
+        />
+        {current ? current.name : '그룹없음'}
+        <svg className="h-2.5 w-2.5 opacity-60" viewBox="0 0 20 20" fill="currentColor">
+          <path
+            fillRule="evenodd"
+            d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.06l3.71-3.83a.75.75 0 1 1 1.08 1.04l-4.25 4.39a.75.75 0 0 1-1.08 0L5.21 8.27a.75.75 0 0 1 .02-1.06Z"
+            clipRule="evenodd"
+          />
+        </svg>
+      </button>
+      {isOpen && pos && typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{ position: 'fixed', top: pos.top, left: pos.left, width: 200 }}
+            className="z-[1000] overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 text-sm shadow-xl"
+          >
+            <button
+              type="button"
+              onClick={() => onChange(null)}
+              className={`flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-zinc-50 ${
+                !current ? 'bg-zinc-50 font-semibold' : ''
+              }`}
+            >
+              <span className="h-2 w-2 rounded-full bg-zinc-300" />
+              <span className="flex-1 text-xs text-zinc-700">그룹없음</span>
+              {!current && (
+                <svg className="h-3.5 w-3.5 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+            </button>
+            {groups.length > 0 && <div className="my-1 border-t border-zinc-100" />}
+            <div className="max-h-72 overflow-y-auto">
+              {groups.map((g) => {
+                const active = current?.id === g.id
+                return (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => onChange(g.id)}
+                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-zinc-50 ${
+                      active ? 'bg-zinc-50 font-semibold' : ''
+                    }`}
+                  >
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: g.color }} />
+                    <span className="flex-1 truncate text-xs" style={{ color: g.color }}>{g.name}</span>
+                    {active && (
+                      <svg className="h-3.5 w-3.5 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </div>,
+          document.body,
+        )}
     </>
   )
 }

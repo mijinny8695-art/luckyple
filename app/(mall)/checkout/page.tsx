@@ -32,7 +32,7 @@ export default async function CheckoutPage({
   // 사용자 프로필
   const { data: profile } = await supabase
     .from('profiles')
-    .select('name, email, points')
+    .select('name, email, points, phone, zipcode, address, address_detail')
     .eq('id', user.id)
     .single()
 
@@ -92,6 +92,10 @@ export default async function CheckoutPage({
         items={items}
         userEmail={user.email ?? ''}
         userName={profile?.name ?? ''}
+        userPhone={profile?.phone ?? ''}
+        userZipcode={profile?.zipcode ?? ''}
+        userAddress={profile?.address ?? ''}
+        userAddressDetail={profile?.address_detail ?? ''}
         userPoints={profile?.points ?? 0}
         site={{
           bankName: site?.bank_name ?? null,

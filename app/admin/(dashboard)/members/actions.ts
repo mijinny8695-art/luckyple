@@ -19,6 +19,8 @@ export type Member = {
   birthdate: string | null
   referrer: string | null
   memo: string | null
+  group_id: string | null
+  group?: { id: string; name: string; color: string } | null
   created_at: string
   // 집계
   total_purchased: number
@@ -40,7 +42,7 @@ export async function getMembers(search?: string): Promise<Member[]> {
 
   let query = supabase
     .from('profiles')
-    .select('id, email, name, role, points, gender, phone, homepage, address, zipcode, address_detail, birthdate, referrer, memo, created_at')
+    .select('id, email, name, role, points, gender, phone, homepage, address, zipcode, address_detail, birthdate, referrer, memo, group_id, created_at')
     .order('created_at', { ascending: false })
 
   if (search?.trim()) {
@@ -48,10 +50,23 @@ export async function getMembers(search?: string): Promise<Member[]> {
   }
 
   const { data } = await query
-  const rows = (data ?? []) as Omit<Member, 'total_purchased' | 'post_count'>[]
+  const rows = (data ?? []) as Omit<Member, 'total_purchased' | 'post_count' | 'group'>[]
   if (rows.length === 0) return []
 
   const ids = rows.map((r) => r.id)
+
+  // 그룹 정보
+  const groupIds = [...new Set(rows.map((r) => r.group_id).filter(Boolean) as string[])]
+  const groupMap = new Map<string, { id: string; name: string; color: string }>()
+  if (groupIds.length > 0) {
+    const { data: groups } = await supabase
+      .from('member_groups')
+      .select('id, name, color')
+      .in('id', groupIds)
+    for (const g of (groups ?? []) as { id: string; name: string; color: string }[]) {
+      groupMap.set(g.id, g)
+    }
+  }
 
   // 누적 구매금액: 결제완료(취소 아님)인 주문 합계
   const { data: orderRows } = await supabase
@@ -78,6 +93,7 @@ export async function getMembers(search?: string): Promise<Member[]> {
 
   return rows.map((r) => ({
     ...r,
+    group: r.group_id ? groupMap.get(r.group_id) ?? null : null,
     total_purchased: totalByUser.get(r.id) ?? 0,
     post_count: postByUser.get(r.id) ?? 0,
   }))
@@ -93,12 +109,12 @@ export async function getMemberById(id: string): Promise<Member | null> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('profiles')
-    .select('id, email, name, role, points, gender, phone, homepage, address, zipcode, address_detail, birthdate, referrer, memo, created_at')
+    .select('id, email, name, role, points, gender, phone, homepage, address, zipcode, address_detail, birthdate, referrer, memo, group_id, created_at')
     .eq('id', id)
     .single()
   if (!data) return null
 
-  const row = data as Omit<Member, 'total_purchased' | 'post_count'>
+  const row = data as Omit<Member, 'total_purchased' | 'post_count' | 'group'>
 
   const { data: orderRows } = await supabase
     .from('orders')
@@ -115,7 +131,17 @@ export async function getMemberById(id: string): Promise<Member | null> {
     .select('id', { count: 'exact', head: true })
     .eq('user_id', id)
 
-  return { ...row, total_purchased, post_count: post_count ?? 0 }
+  let group: { id: string; name: string; color: string } | null = null
+  if (row.group_id) {
+    const { data: g } = await supabase
+      .from('member_groups')
+      .select('id, name, color')
+      .eq('id', row.group_id)
+      .single()
+    if (g) group = g as { id: string; name: string; color: string }
+  }
+
+  return { ...row, group, total_purchased, post_count: post_count ?? 0 }
 }
 
 export async function getMemberLoginInfo(id: string): Promise<MemberLoginInfo> {

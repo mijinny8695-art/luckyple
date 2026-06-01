@@ -120,8 +120,14 @@ export function NavDropdown({
 
       {open && item.children && item.children.length > 0 && (
         <div
-          className="absolute left-1/2 top-full z-50 -translate-x-1/2 rounded-xl border border-zinc-100 bg-white py-2 shadow-lg"
-          style={{ minWidth: '160px', width: 'max-content' }}
+          className="absolute left-1/2 top-full z-50 -translate-x-1/2 overflow-y-auto overscroll-contain rounded-xl border border-zinc-100 bg-white py-2 shadow-lg [scrollbar-width:thin]"
+          style={{
+            minWidth: '160px',
+            width: 'max-content',
+            // trigger 바로 아래에 떠 있으므로 trigger 의 viewport 위치를 기준으로 잔여 높이를 계산.
+            // 100vh - (트리거 하단 ≒ 헤더 + 네비 높이) - 여백
+            maxHeight: 'calc(100vh - 140px)',
+          }}
         >
           {item.children.map((child, index) => (
             <SubMenu key={`${child.href}-${index}`} item={child} />

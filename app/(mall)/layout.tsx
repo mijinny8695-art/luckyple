@@ -6,6 +6,7 @@ import { FloatingButtons } from '@/components/mall/floating-buttons'
 import { getSiteConfigFull } from '@/lib/site'
 import { createClient } from '@/lib/supabase/server'
 import { trackPageView } from '@/lib/track'
+import { cookies } from 'next/headers'
 
 export default async function MallLayout({
   children,
@@ -13,6 +14,22 @@ export default async function MallLayout({
   children: React.ReactNode
 }) {
   const site = await getSiteConfigFull()
+  const cookieStore = await cookies()
+  const isPreviewDraft = cookieStore.get('preview-draft')?.value === '1'
+
+  // 미리보기 모드면 헤더 인증 설정 및 네비 스타일도 draft 값을 우선 사용
+  const designAny = site.design as unknown as {
+    header_auth_config?: unknown
+    header_auth_config_draft?: unknown
+    nav_style_draft?: { nav_font_size?: number; nav_color?: string; nav_hover_color?: string } | null
+  } | null
+  const headerAuthRaw = isPreviewDraft
+    ? designAny?.header_auth_config_draft ?? designAny?.header_auth_config
+    : designAny?.header_auth_config
+  const navStyleDraft = isPreviewDraft ? designAny?.nav_style_draft : null
+  const navFontSize = navStyleDraft?.nav_font_size ?? site.design?.nav_font_size
+  const navColor = navStyleDraft?.nav_color ?? site.design?.nav_color
+  const navHoverColor = navStyleDraft?.nav_hover_color ?? site.design?.nav_hover_color
 
   // 비동기로 추적 (렌더링 블로킹 없음)
   trackPageView(site.id).catch(() => {})
@@ -35,9 +52,10 @@ export default async function MallLayout({
         siteName={site.name}
         navItems={site.design?.nav_items}
         logoUrl={site.design?.logo_url}
-        navFontSize={site.design?.nav_font_size}
-        navColor={site.design?.nav_color}
-        navHoverColor={site.design?.nav_hover_color}
+        navFontSize={navFontSize}
+        navColor={navColor}
+        navHoverColor={navHoverColor}
+        headerAuthConfigRaw={headerAuthRaw}
       />
       <PageTracker siteId={site.id} />
       {popups && popups.length > 0 && <LayerPopup popups={popups} />}

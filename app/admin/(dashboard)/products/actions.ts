@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { generateSlug } from '@/lib/slug'
+import { copyCloudflareImage } from '@/lib/cloudflare-images'
 
 export type Product = {
   id: string
@@ -466,16 +467,58 @@ export async function duplicateProduct(id: string) {
     .maybeSingle()
   const nextProductNo = ((maxRow?.product_no as number | null) ?? 0) + 1
 
+  // 이미지 복제: 같은 imageId를 공유하지 않도록 모든 Cloudflare 이미지를 새로 복사.
+  // 시간 단축을 위해 병렬 처리.
+  async function dupImage(url: string | null): Promise<string | null> {
+    if (!url) return null
+    const r = await copyCloudflareImage(url)
+    if (r.error) {
+      console.error('[duplicateProduct] image copy failed', { url, error: r.error })
+      // 실패 시 원본 그대로 두지 않고 빈 값으로 — 원본 이미지가 삭제 위험에 노출되지 않도록
+      return null
+    }
+    return r.url ?? null
+  }
+
+  // summary / description 본문 안의 imagedelivery.net URL을 모두 추출, 한 번에 병렬 복제 후 치환
+  async function dupBodyImages(body: string | null): Promise<string | null> {
+    if (!body) return body
+    const matches = body.match(/https:\/\/imagedelivery\.net\/[^"'\s)]+/g)
+    if (!matches || matches.length === 0) return body
+    const unique = [...new Set(matches)]
+    const results = await Promise.all(unique.map((src) => copyCloudflareImage(src)))
+    let next = body
+    for (let i = 0; i < unique.length; i++) {
+      const src = unique[i]
+      const r = results[i]
+      if (r.url && r.url !== src) {
+        next = next.split(src).join(r.url)
+      } else if (r.error) {
+        console.error('[duplicateProduct] body image copy failed', { src, error: r.error })
+      }
+    }
+    return next
+  }
+
+  const subSources = (original.sub_images ?? []) as string[]
+  const [newThumbnail, subDups, newSummary, newDescription] = await Promise.all([
+    dupImage(original.thumbnail_url),
+    Promise.all(subSources.map((s) => dupImage(s))),
+    dupBodyImages(original.summary),
+    dupBodyImages(original.description),
+  ])
+  const subImages = subDups.filter((u): u is string => !!u)
+
   const { data: newProduct, error } = await supabase
     .from('products')
     .insert({
       name: original.name + ' (복사)',
       slug,
-      summary: original.summary,
-      description: original.description,
+      summary: newSummary,
+      description: newDescription,
       price: original.price,
-      thumbnail_url: original.thumbnail_url,
-      sub_images: original.sub_images,
+      thumbnail_url: newThumbnail,
+      sub_images: subImages,
       category_nos: original.category_nos,
       // 원본과 동일한 노출 상태로 복제
       status: original.status,
@@ -547,10 +590,28 @@ export async function deleteProduct(id: string) {
 
     const uniqueUrls = [...new Set(imageUrls)]
     if (uniqueUrls.length > 0) {
-      // fire-and-forget: 응답을 기다리지 않고 백그라운드에서 삭제
-      import('@/lib/cloudflare-images').then(({ deleteFromCloudflare }) => {
-        Promise.allSettled(uniqueUrls.map((url) => deleteFromCloudflare(url)))
-      }).catch(() => {})
+      // 같은 imageId를 다른 상품이 (썸네일/서브이미지/본문 어디에든) 쓰고 있는지 검사.
+      // 사용 중인 URL은 cloudflare 삭제 skip → 다른 상품의 이미지가 함께 깨지는 사고 방지.
+      const { data: stillUsed } = await supabase
+        .from('products')
+        .select('thumbnail_url, sub_images, summary, description')
+      const inUse = new Set<string>()
+      for (const row of stillUsed ?? []) {
+        if (row.thumbnail_url) inUse.add(row.thumbnail_url)
+        for (const u of (row.sub_images ?? []) as string[]) inUse.add(u)
+        for (const body of [row.summary, row.description]) {
+          if (!body) continue
+          const m = (body as string).match(/https:\/\/imagedelivery\.net\/[^"'\s)]+/g)
+          if (m) for (const u of m) inUse.add(u)
+        }
+      }
+      const toDelete = uniqueUrls.filter((u) => !inUse.has(u))
+      if (toDelete.length > 0) {
+        // fire-and-forget: 응답을 기다리지 않고 백그라운드에서 삭제
+        import('@/lib/cloudflare-images').then(({ deleteFromCloudflare }) => {
+          Promise.allSettled(toDelete.map((url) => deleteFromCloudflare(url)))
+        }).catch(() => {})
+      }
     }
   }
 

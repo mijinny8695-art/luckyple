@@ -6,6 +6,7 @@ import { ProductGallery } from '@/components/mall/product-gallery'
 import { ProductBuyBox } from '@/components/mall/product-buy-box'
 import { ShareButton } from '@/components/mall/share-button'
 import { ScrollToTop } from '@/components/scroll-to-top'
+import { formatProductPrice } from '@/lib/format-price'
 import type { Metadata } from 'next'
 
 // NEW 뱃지 — 등록 후 14일 이내
@@ -195,7 +196,7 @@ export default async function ProductPage({
           </div>
 
           <p className="mt-4 text-3xl font-bold text-zinc-900">
-            {product.price.toLocaleString()}원
+            {formatProductPrice(product.price)}
           </p>
 
           {product.summary && (

@@ -36,6 +36,11 @@ export function CategoryForm({
   const [videoProgress, setVideoProgress] = useState(0)
   const [bannerShowOverlay, setBannerShowOverlay] = useState(category?.banner_show_overlay ?? true)
 
+  // 상품 목록 페이징 설정
+  const [paginationMode, setPaginationMode] = useState<'load_more' | 'pages'>(category?.pagination_mode ?? 'load_more')
+  const [productsPerRow, setProductsPerRow] = useState<number>(category?.products_per_row ?? 4)
+  const [productsRows, setProductsRows] = useState<number>(category?.products_rows ?? 10)
+
   const isEdit = mode === 'edit' && category
   const newLevel = parentLevel ? parentLevel + 1 : 1
 
@@ -124,6 +129,9 @@ export function CategoryForm({
     formData.set('banner_url', bannerImageUrl)
     formData.set('banner_video_url', bannerVideoUrl ?? '')
     formData.set('banner_show_overlay', String(bannerShowOverlay))
+    formData.set('pagination_mode', paginationMode)
+    formData.set('products_per_row', String(productsPerRow))
+    formData.set('products_rows', String(productsRows))
 
     let result
     if (isEdit) {
@@ -374,6 +382,95 @@ export function CategoryForm({
               <p className="text-[11px] text-zinc-400">끄면 &quot;HIGH-END&quot; 문구와 제작과정/구매후기 버튼이 숨겨집니다.</p>
             </div>
           </div>
+        </div>
+
+        {/* 상품 목록 표시 (페이징 / 그리드) */}
+        <div className="rounded-lg border border-zinc-200 p-4 space-y-3">
+          <p className="text-sm font-medium text-zinc-900">상품 목록 표시</p>
+
+          <div>
+            <span className="mb-1.5 block text-xs font-medium text-zinc-600">페이징 방식</span>
+            <div className="grid grid-cols-2 gap-2">
+              <label
+                className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
+                  paginationMode === 'load_more'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="pagination_mode_ui"
+                  className="sr-only"
+                  checked={paginationMode === 'load_more'}
+                  onChange={() => setPaginationMode('load_more')}
+                />
+                <span className="font-medium">더보기</span>
+                <span className="text-[11px] text-zinc-500">하단 버튼으로 추가 로드</span>
+              </label>
+              <label
+                className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
+                  paginationMode === 'pages'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="pagination_mode_ui"
+                  className="sr-only"
+                  checked={paginationMode === 'pages'}
+                  onChange={() => setPaginationMode('pages')}
+                />
+                <span className="font-medium">페이지 번호</span>
+                <span className="text-[11px] text-zinc-500">1·2·3… 인디케이터</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <div>
+              <label htmlFor="products_per_row" className="mb-1 block text-xs font-medium text-zinc-600">
+                한 줄 상품 수
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  id="products_per_row"
+                  type="number"
+                  min={1}
+                  max={8}
+                  value={productsPerRow}
+                  onChange={(e) =>
+                    setProductsPerRow(Math.min(8, Math.max(1, parseInt(e.target.value) || 1)))
+                  }
+                  className="h-10 w-24 rounded-md border border-zinc-300 px-3 text-sm focus:border-zinc-900 focus:outline-none"
+                />
+                <span className="text-xs text-zinc-500">개 (1~8)</span>
+              </div>
+            </div>
+            <div>
+              <label htmlFor="products_rows" className="mb-1 block text-xs font-medium text-zinc-600">
+                한 페이지 줄 수
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  id="products_rows"
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={productsRows}
+                  onChange={(e) =>
+                    setProductsRows(Math.min(30, Math.max(1, parseInt(e.target.value) || 1)))
+                  }
+                  className="h-10 w-24 rounded-md border border-zinc-300 px-3 text-sm focus:border-zinc-900 focus:outline-none"
+                />
+                <span className="text-xs text-zinc-500">줄 (1~30)</span>
+              </div>
+            </div>
+          </div>
+          <p className="text-[11px] text-zinc-500">
+            한 페이지에 총 {productsPerRow * productsRows}개 상품이 표시됩니다.
+          </p>
         </div>
 
         <div className="flex gap-2">

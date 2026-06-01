@@ -49,6 +49,10 @@ export function CheckoutForm({
   items,
   userEmail,
   userName,
+  userPhone = '',
+  userZipcode = '',
+  userAddress = '',
+  userAddressDetail = '',
   userPoints,
   site,
 }: {
@@ -59,6 +63,10 @@ export function CheckoutForm({
   items: Item[]
   userEmail: string
   userName: string
+  userPhone?: string
+  userZipcode?: string
+  userAddress?: string
+  userAddressDetail?: string
   userPoints: number
   site: SiteConfig
 }) {
@@ -66,7 +74,7 @@ export function CheckoutForm({
 
   // 주문자 정보 — 프로필에서 기본값
   const [ordererName, setOrdererName] = useState(userName)
-  const [ordererPhone, setOrdererPhone] = useState('')
+  const [ordererPhone, setOrdererPhone] = useState(userPhone)
   const [ordererEmail, setOrdererEmail] = useState(userEmail)
   const [editingOrderer, setEditingOrderer] = useState(false)
 
@@ -97,12 +105,15 @@ export function CheckoutForm({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // "주문자 정보와 동일" 체크 시 배송지 복사
+  // "주문자 정보와 동일" 체크 시 배송지 = 주문자 + 회원 프로필 주소 자동 채우기
   function toggleSameAsOrderer(checked: boolean) {
     setSameAsOrderer(checked)
     if (checked) {
       setRecipientName(ordererName)
       setRecipientPhone(ordererPhone)
+      if (userZipcode) setPostalCode(userZipcode)
+      if (userAddress) setAddress1(userAddress)
+      if (userAddressDetail) setAddress2(userAddressDetail)
     }
   }
 

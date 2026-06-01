@@ -159,6 +159,7 @@ export type SiteDesign = {
   footer_phone: string | null
   footer_hours: string | null
   footer_lunch: string | null
+  footer_extra: string | null
   kakao_link: string | null
   nav_font_size: number | null
   nav_color: string | null

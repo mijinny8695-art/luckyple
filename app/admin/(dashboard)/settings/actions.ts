@@ -133,3 +133,53 @@ export async function deleteSite(id: string) {
   revalidatePath('/admin/settings')
   return { success: true }
 }
+
+// ───── IP 차단 ─────
+
+export type BlockedIp = {
+  id: string
+  ip: string
+  reason: string | null
+  created_at: string
+}
+
+export async function getBlockedIps(): Promise<BlockedIp[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('blocked_ips')
+    .select('id, ip, reason, created_at')
+    .order('created_at', { ascending: false })
+  return (data ?? []) as BlockedIp[]
+}
+
+export async function addBlockedIp(ip: string, reason?: string) {
+  const v = ip.trim()
+  if (!v) return { error: 'IP를 입력해주세요.' }
+  const valid =
+    /^(\d{1,3}\.){3}\d{1,3}$/.test(v) ||
+    /^[0-9a-fA-F:]+$/.test(v) ||
+    /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/.test(v)
+  if (!valid) return { error: '올바른 IP 형식이 아닙니다. (예: 1.2.3.4)' }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const { error } = await supabase.from('blocked_ips').insert({
+    ip: v,
+    reason: reason?.trim() || null,
+    created_by: user?.id ?? null,
+  })
+  if (error) {
+    if (error.code === '23505') return { error: '이미 차단된 IP입니다.' }
+    return { error: 'IP 차단 등록 중 오류가 발생했습니다.' }
+  }
+  revalidatePath('/admin/settings')
+  return { success: true }
+}
+
+export async function removeBlockedIp(id: string) {
+  const supabase = await createClient()
+  const { error } = await supabase.from('blocked_ips').delete().eq('id', id)
+  if (error) return { error: 'IP 차단 해제 중 오류가 발생했습니다.' }
+  revalidatePath('/admin/settings')
+  return { success: true }
+}

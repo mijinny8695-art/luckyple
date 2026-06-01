@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useState, useRef, useEffect, useCallback, type CSSProperties } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { formatProductPrice } from '@/lib/format-price'
 
 type Product = {
   id: string
@@ -44,7 +45,7 @@ function ProductCard({ product, fromCategoryId }: { product: Product; fromCatego
       </div>
       <div className="mt-3">
         <p className="text-sm text-zinc-900 line-clamp-1">{product.name}</p>
-        <p className="mt-1 text-sm font-bold text-zinc-900">{product.price.toLocaleString()}원</p>
+        <p className="mt-1 text-sm font-bold text-zinc-900">{formatProductPrice(product.price)}</p>
       </div>
     </Link>
   )

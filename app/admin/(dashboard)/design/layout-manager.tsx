@@ -15,7 +15,9 @@ import type {
   BoardSectionConfig,
   SiteDesign,
 } from '@/lib/types/design'
-import { saveLayout, saveNavStyle } from './actions'
+import { saveLayout, saveLayoutDraft, clearLayoutDraft, saveNavStyleDraft } from './actions'
+import { HeaderAuthEditor } from './header-auth-editor'
+import { getHeaderAuthConfig, type HeaderAuthConfig } from '@/lib/header-auth-config'
 import { BannerPickerModal } from './banner-picker-modal'
 import { InlineEditor } from '@/components/admin/inline-editor'
 
@@ -71,6 +73,13 @@ export function LayoutManager({
   const [navColor, setNavColor] = useState<string>(design?.nav_color ?? '#484848')
   const [navHoverColor, setNavHoverColor] = useState<string>(design?.nav_hover_color ?? '#18181b')
   const [navSaving, setNavSaving] = useState(false)
+  // 마지막 「저장」 한 시점의 nav 스타일 (되돌리기 기준)
+  const [savedNav, setSavedNav] = useState({
+    nav_font_size: design?.nav_font_size ?? 13,
+    nav_color: design?.nav_color ?? '#484848',
+    nav_hover_color: design?.nav_hover_color ?? '#18181b',
+  })
+  const [prevSavedNav, setPrevSavedNav] = useState<typeof savedNav | null>(null)
 
   const openNavEditor = () => {
     // 모달 열 때 현재 저장된 값으로 리셋
@@ -87,22 +96,25 @@ export function LayoutManager({
     return Math.min(24, Math.max(10, n))
   }
 
-  const handleSaveNavStyle = async () => {
+  // 네비 스타일 「적용」 — draft 에만 임시 저장. 정식 저장은 우하단 「저장」.
+  const handleApplyNavStyle = async () => {
     setNavSaving(true)
     const fz = normalizeNavFontSize(navFontSize)
-    setNavFontSize(String(fz)) // 보정값을 input 에도 반영
-    const result = await saveNavStyle(siteId, {
+    setNavFontSize(String(fz))
+    const next = {
       nav_font_size: fz,
       nav_color: navColor,
       nav_hover_color: navHoverColor,
-    })
+    }
+    const result = await saveNavStyleDraft(siteId, next)
     setNavSaving(false)
     if (result.error) {
       setMessage({ type: 'error', text: result.error })
       setTimeout(() => setMessage(null), 3000)
     } else {
       setEditingNav(false)
-      setPreviewKey((k) => k + 1) // iframe 새로고침으로 적용 반영
+      setDirty(true)
+      setPreviewKey((k) => k + 1) // iframe 새로고침으로 미리보기 반영
     }
   }
   const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null)
@@ -114,6 +126,16 @@ export function LayoutManager({
   // 헤더 네비게이션 영역 좌표 (iframe document 기준 절대 top + 높이)
   const [navRect, setNavRect] = useState<{ top: number; height: number } | null>(null)
   const [hoveredNav, setHoveredNav] = useState(false)
+  // 헤더 우측 인증 메뉴 영역
+  const [authRect, setAuthRect] = useState<{ top: number; right: number; width: number; height: number } | null>(null)
+  const [hoveredAuth, setHoveredAuth] = useState(false)
+  const [editingHeaderAuth, setEditingHeaderAuth] = useState(false)
+  const initialHeaderAuthConfig = getHeaderAuthConfig(
+    (design as unknown as { header_auth_config?: unknown } | null)?.header_auth_config,
+  )
+  const [headerAuthConfig, setHeaderAuthConfig] = useState<HeaderAuthConfig>(initialHeaderAuthConfig)
+  const [savedHeaderAuthConfig, setSavedHeaderAuthConfig] = useState<HeaderAuthConfig>(initialHeaderAuthConfig)
+  const [prevSavedHeaderAuthConfig, setPrevSavedHeaderAuthConfig] = useState<HeaderAuthConfig | null>(null)
   const [editingCategoryIndex, setEditingCategoryIndex] = useState<number | null>(null)
   const [categoryLabel, setCategoryLabel] = useState('')
   const [categorySubtitle, setCategorySubtitle] = useState('')
@@ -130,6 +152,24 @@ export function LayoutManager({
     setSections(updater)
     setDirty(true)
   }
+
+  // 마지막으로 「저장」 한 시점의 layout (= 되돌리기 기준점).
+  // 「저장」 버튼을 눌렀을 때만 갱신. props 변경(자동 draft revalidate 등)에 동기화하지 않음.
+  const [savedLayout, setSavedLayout] = useState<LayoutSection[]>(initialLayout)
+  // 직전 저장본 — 「저장」 직후 「되돌리기」 로 마지막 저장을 undo 할 수 있게 보관
+  const [prevSavedLayout, setPrevSavedLayout] = useState<LayoutSection[] | null>(null)
+
+  // ─── 미리보기용 임시 저장 (DB site_design.homepage_layout_draft) ───
+  // 정식 layout 은 절대 건드리지 않음. 일반 방문자는 항상 정식 layout 만 보고,
+  // draft 는 admin 미리보기 iframe (?preview=draft) 에서만 사용됨.
+  useEffect(() => {
+    if (!dirty) return
+    const handle = setTimeout(async () => {
+      await saveLayoutDraft(siteId, sections)
+      setPreviewKey((k) => k + 1)
+    }, 500)
+    return () => clearTimeout(handle)
+  }, [sections, dirty, siteId])
 
   // (toggleVisibility / deleteSection / moveSection 은 iframeRef 가 선언된 아래에서 정의)
 
@@ -362,17 +402,85 @@ export function LayoutManager({
   const handleSave = async () => {
     setSaving(true)
     setMessage(null)
-    const result = await saveLayout(siteId, sections)
+    const navPayload = {
+      nav_font_size: normalizeNavFontSize(navFontSize),
+      nav_color: navColor,
+      nav_hover_color: navHoverColor,
+    }
+    // layout + 헤더 우측 메뉴 + 네비 스타일을 한 번에 commit
+    const result = await saveLayout(siteId, sections, headerAuthConfig, navPayload)
     if (result.error) {
       setMessage({ type: 'error', text: result.error })
     } else {
       setMessage({ type: 'success', text: '레이아웃이 저장되었습니다.' })
       setTimeout(() => setMessage(null), 3000)
       setDirty(false)
+      // 직전 저장본을 보관 (저장 직후 「되돌리기」 가능)
+      setPrevSavedLayout(savedLayout)
+      setPrevSavedHeaderAuthConfig(savedHeaderAuthConfig)
+      setPrevSavedNav(savedNav)
+      // 새 저장본 갱신
+      setSavedLayout(sections)
+      setSavedHeaderAuthConfig(headerAuthConfig)
+      setSavedNav(navPayload)
       // 저장된 깨끗한 상태로 iframe 새로고침
       setPreviewKey((k) => k + 1)
     }
     setSaving(false)
+  }
+
+  // 되돌리기 — 마지막 저장 상태로 메모리 복원 + 미리보기용 임시 draft 비움.
+  // 정식 layout 은 건드리지 않으므로 일반 방문자에게 보이는 화면은 동일.
+  const canRevert = dirty || prevSavedLayout !== null
+
+  const handleRevert = async () => {
+    if (!canRevert) return
+
+    if (dirty) {
+      // 저장 안 한 변경 취소 — 현재 저장본으로 메모리 복원, draft 비움
+      if (!confirm('저장하지 않은 변경사항을 취소하고 마지막 저장 상태로 되돌리시겠습니까?')) return
+      setSections(savedLayout)
+      setHeaderAuthConfig(savedHeaderAuthConfig)
+      setNavFontSize(String(savedNav.nav_font_size))
+      setNavColor(savedNav.nav_color)
+      setNavHoverColor(savedNav.nav_hover_color)
+      setDirty(false)
+      await clearLayoutDraft(siteId)
+      setPreviewKey((k) => k + 1)
+      setMessage({ type: 'success', text: '마지막 저장 상태로 되돌렸습니다.' })
+      setTimeout(() => setMessage(null), 2500)
+      return
+    }
+
+    // 저장 직후의 「되돌리기」 — 직전 저장본으로 DB 까지 commit 해서 마지막 저장을 undo
+    if (!prevSavedLayout) return
+    if (!confirm('마지막 저장을 취소하고 직전에 저장된 상태로 되돌리시겠습니까?')) return
+    const navPayload = prevSavedNav ?? savedNav
+    const headerPayload = prevSavedHeaderAuthConfig ?? savedHeaderAuthConfig
+    setSaving(true)
+    const result = await saveLayout(siteId, prevSavedLayout, headerPayload, navPayload)
+    if (result.error) {
+      setMessage({ type: 'error', text: result.error })
+      setSaving(false)
+      return
+    }
+    setSections(prevSavedLayout)
+    setHeaderAuthConfig(headerPayload)
+    setNavFontSize(String(navPayload.nav_font_size))
+    setNavColor(navPayload.nav_color)
+    setNavHoverColor(navPayload.nav_hover_color)
+    setSavedLayout(prevSavedLayout)
+    setSavedHeaderAuthConfig(headerPayload)
+    setSavedNav(navPayload)
+    // 직전 저장본 한 단계만 보관 → undo 후 다시 사용 못 함
+    setPrevSavedLayout(null)
+    setPrevSavedHeaderAuthConfig(null)
+    setPrevSavedNav(null)
+    setDirty(false)
+    setSaving(false)
+    setPreviewKey((k) => k + 1)
+    setMessage({ type: 'success', text: '직전 저장 상태로 되돌렸습니다.' })
+    setTimeout(() => setMessage(null), 2500)
   }
 
   // 콘텐츠 추가/편집: 미리보기(local state) 에만 반영하고 dirty 표시.
@@ -411,6 +519,26 @@ export function LayoutManager({
       setNavRect({ top, height: navEl.offsetHeight })
     } else {
       setNavRect(null)
+    }
+
+    // 헤더 우측 인증 메뉴 영역 측정
+    const authEl = doc.querySelector<HTMLElement>('[data-header-auth]')
+    if (authEl) {
+      const rect = authEl.getBoundingClientRect()
+      let top = 0
+      let cur: HTMLElement | null = authEl
+      while (cur) {
+        top += cur.offsetTop
+        cur = cur.offsetParent as HTMLElement | null
+      }
+      setAuthRect({
+        top,
+        right: doc.documentElement.clientWidth - rect.right,
+        width: rect.width,
+        height: rect.height,
+      })
+    } else {
+      setAuthRect(null)
     }
     // 전체 문서 높이도 갱신 (iframe 안 콘텐츠가 길어지면 따라가게)
     const docHeight = Math.max(
@@ -668,8 +796,8 @@ export function LayoutManager({
         </div>
       )}
 
-      {/* PC / 모바일 미리보기 토글 */}
-      <div className="flex items-center justify-center">
+      {/* PC / 모바일 미리보기 토글 + 되돌리기 */}
+      <div className="relative flex items-center justify-center">
         <div className="inline-flex overflow-hidden rounded-lg border border-zinc-200 bg-white">
           <button
             type="button"
@@ -698,6 +826,26 @@ export function LayoutManager({
             모바일
           </button>
         </div>
+
+        {/* 맨 오른쪽: 되돌리기 — 저장 안 한 변경 취소 또는 직전 저장으로 undo */}
+        {canRevert && (
+          <button
+            type="button"
+            onClick={handleRevert}
+            disabled={saving}
+            title={
+              dirty
+                ? '저장하지 않은 변경사항을 취소하고 마지막 저장 상태로 되돌립니다'
+                : '마지막 저장을 취소하고 직전 저장 상태로 되돌립니다'
+            }
+            className="absolute right-0 flex cursor-pointer items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h13a5 5 0 010 10h-3" />
+            </svg>
+            되돌리기
+          </button>
+        )}
       </div>
 
       {/* 실제 페이지 + 오버레이 편집 영역 */}
@@ -754,7 +902,7 @@ export function LayoutManager({
             <iframe
               ref={iframeRef}
               key={previewKey}
-              src="/"
+              src={dirty ? '/?preview=draft' : '/'}
               title="실제 페이지 미리보기"
               className="block w-full"
               style={{ height: `${iframeHeight}px`, border: 'none' }}
@@ -789,6 +937,45 @@ export function LayoutManager({
                       type="button"
                       onClick={openNavEditor}
                       className="flex cursor-pointer items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-blue-600 hover:bg-blue-50"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                      </svg>
+                      편집
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 헤더 우측 인증 메뉴 오버레이 */}
+              {authRect && (
+                <div
+                  onMouseEnter={() => setHoveredAuth(true)}
+                  onMouseLeave={() => setHoveredAuth(false)}
+                  className={`pointer-events-auto absolute transition ${
+                    hoveredAuth ? 'border-2 border-purple-500 bg-purple-500/5' : 'border-2 border-transparent hover:border-purple-300'
+                  }`}
+                  style={{
+                    top: authRect.top - 4,
+                    right: Math.max(0, authRect.right - 8),
+                    width: authRect.width + 16,
+                    height: authRect.height + 8,
+                  }}
+                >
+                  <div className="absolute -top-6 left-0 flex items-center gap-1">
+                    <span className="rounded bg-purple-500 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
+                      회원 메뉴
+                    </span>
+                  </div>
+                  <div
+                    className={`absolute -top-9 right-0 flex items-center gap-1 rounded-lg bg-white px-1 py-1 shadow-md ring-1 ring-zinc-200 transition ${
+                      hoveredAuth ? 'opacity-100' : 'opacity-0'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setEditingHeaderAuth(true)}
+                      className="flex cursor-pointer items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-purple-600 hover:bg-purple-50"
                     >
                       <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -911,7 +1098,9 @@ export function LayoutManager({
           </div>
         </div>
         <p className="mt-2 text-center text-[11px] text-zinc-400">
-          미리보기는 저장된 상태입니다 · 변경 후 「저장」을 누르면 적용됩니다
+          {dirty
+            ? '🟡 편집 중 — 미리보기는 본인에게만 보이며 일반 방문자에게는 노출되지 않습니다 · 「저장」 또는 「되돌리기」 선택'
+            : '미리보기는 저장된 상태입니다 · 변경하면 즉시 미리보기에 반영됩니다 (저장 전까지 실제 사이트엔 적용 안 됨)'}
         </p>
       </div>
 
@@ -1910,6 +2099,21 @@ export function LayoutManager({
         </div>
       )}
 
+      {/* 헤더 우측 인증 메뉴 편집 모달 — 「적용」 = 미리보기 draft + 메모리 state */}
+      {editingHeaderAuth && (
+        <HeaderAuthEditor
+          siteId={siteId}
+          initialConfig={headerAuthConfig}
+          onClose={() => setEditingHeaderAuth(false)}
+          onApplied={(next) => {
+            setHeaderAuthConfig(next)
+            setDirty(true)
+            setEditingHeaderAuth(false)
+            setPreviewKey((k) => k + 1)
+          }}
+        />
+      )}
+
       {/* 네비게이션 위젯 편집 모달 */}
       {editingNav && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -1993,11 +2197,12 @@ export function LayoutManager({
               </button>
               <button
                 type="button"
-                onClick={handleSaveNavStyle}
+                onClick={handleApplyNavStyle}
                 disabled={navSaving}
-                className="flex-1 cursor-pointer rounded-lg bg-zinc-900 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+                title="미리보기에 임시 적용됩니다. 정식 저장은 우하단 「저장」 버튼."
+                className="flex-1 cursor-pointer rounded-lg bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
-                {navSaving ? '저장 중…' : '저장'}
+                {navSaving ? '적용 중…' : '적용'}
               </button>
             </div>
           </div>

@@ -10,6 +10,7 @@ import { HeaderSearch } from './header-search'
 import { NotificationBell } from './notification-bell'
 import { getMyNotifications } from '@/lib/notifications-client-actions'
 import { getCurrentMemberSettings } from '@/lib/member-settings'
+import { getHeaderAuthConfig } from '@/lib/header-auth-config'
 
 export async function Header({
   siteName,
@@ -18,6 +19,7 @@ export async function Header({
   navFontSize,
   navColor,
   navHoverColor,
+  headerAuthConfigRaw,
 }: {
   siteName: string
   navItems?: NavItem[]
@@ -25,7 +27,9 @@ export async function Header({
   navFontSize?: number | null
   navColor?: string | null
   navHoverColor?: string | null
+  headerAuthConfigRaw?: unknown
 }) {
+  const headerAuthConfig = getHeaderAuthConfig(headerAuthConfigRaw)
   const fontSize = navFontSize || 13
   const color = navColor || '#484848'
   const hoverColor = navHoverColor || '#18181b'
@@ -88,11 +92,17 @@ export async function Header({
 
           {/* 우측 — PC: 메뉴 + 알림 / 모바일: 알림 + 카트 */}
           <div className="justify-self-end">
-            <div className="hidden items-center gap-4 md:flex">
-              <HeaderAuth user={user} isAdmin={isAdmin} signupBonus={signupBonus} />
-              {user && (
-                <NotificationBell initialList={notifications.list} initialUnread={notifications.unread} />
-              )}
+            <div
+              data-header-auth
+              className="hidden items-center gap-4 md:flex"
+            >
+              <HeaderAuth
+                user={user}
+                isAdmin={isAdmin}
+                signupBonus={signupBonus}
+                config={headerAuthConfig}
+                notifications={notifications}
+              />
             </div>
             <div className="flex items-center gap-1 md:hidden">
               {user && (

@@ -5,6 +5,7 @@ import { signup } from './actions'
 import type { MemberSettings, FieldKey } from '@/app/admin/(dashboard)/members/settings/config'
 import { AddressSearchButton } from '@/components/address-search-button'
 import { BirthdatePicker } from '@/components/birthdate-picker'
+import { Spinner } from '@/components/spinner'
 
 const TERMS_LIST: { key: string; label: string; required: boolean }[] = [
   { key: 'service', label: '이용약관 동의', required: true },
@@ -128,7 +129,11 @@ export function SignupForm({ settings }: { settings: MemberSettings }) {
   }
 
   return (
-    <form action={handleSubmit} className="space-y-4">
+    <form
+      action={handleSubmit}
+      aria-busy={loading}
+      className={`space-y-4 transition-opacity ${loading ? 'pointer-events-none opacity-60' : ''}`}
+    >
       {error && (
         <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>
       )}
@@ -155,8 +160,9 @@ export function SignupForm({ settings }: { settings: MemberSettings }) {
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded-lg bg-zinc-900 py-2.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+        className="flex w-full items-center justify-center gap-2 rounded-lg bg-zinc-900 py-2.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-80"
       >
+        {loading && <Spinner />}
         {loading ? '가입 중...' : '회원가입'}
       </button>
       <p className="text-center text-sm text-zinc-500">

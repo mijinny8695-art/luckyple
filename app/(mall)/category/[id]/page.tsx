@@ -34,9 +34,13 @@ export async function generateMetadata({
 
 export default async function CategoryPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ page?: string }>
 }) {
+  const sp = await searchParams
+  const requestedPage = Math.max(1, parseInt(sp.page ?? '1') || 1)
   const { id: rawId } = await params
   const id = decodeURIComponent(rawId)
   const supabase = await createClient()
@@ -117,6 +121,16 @@ export default async function CategoryPage({
   let initialProducts: { id: string; name: string; slug: string | null; price: number; thumbnail_url: string | null }[] = []
   let total = 0
 
+  // 카테고리 페이징 설정 (없으면 기본값)
+  const paginationMode: 'load_more' | 'pages' =
+    (category as { pagination_mode?: 'load_more' | 'pages' }).pagination_mode ?? 'load_more'
+  const productsPerRow = (category as { products_per_row?: number }).products_per_row ?? 4
+  const productsRows = (category as { products_rows?: number }).products_rows ?? 10
+  const pageSize = Math.max(1, productsPerRow * productsRows)
+  const page = paginationMode === 'pages' ? requestedPage : 1
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+
   if (allNos.length > 0) {
     const { data, count } = await supabase
       .from('products')
@@ -125,7 +139,7 @@ export default async function CategoryPage({
       .eq('is_active', true)
       .order('product_no', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
-      .range(0, 39)
+      .range(from, to)
 
     initialProducts = data ?? []
     total = count ?? 0
@@ -267,6 +281,10 @@ export default async function CategoryPage({
           categoryNos={allNos}
           total={total}
           fromCategoryId={category.id}
+          paginationMode={paginationMode}
+          perRow={productsPerRow}
+          rows={productsRows}
+          page={page}
         />
       </div>
     </div>

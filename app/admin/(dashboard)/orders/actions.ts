@@ -40,8 +40,20 @@ export type OrderRow = {
   updated_at: string
 }
 
+export type OrderItemRow = {
+  id: string
+  order_id: string
+  product_id: string | null
+  product_name: string
+  product_thumbnail_url: string | null
+  unit_price: number
+  quantity: number
+  subtotal: number
+}
+
 export type OrderListItem = OrderRow & {
   item_count: number
+  items: OrderItemRow[]
 }
 
 export type OrderListParams = {
@@ -87,20 +99,26 @@ export async function getOrders(params: OrderListParams): Promise<{ orders: Orde
     return { orders: [], total: count ?? 0 }
   }
 
-  // 항목 갯수 lookup
+  // 항목 lookup
   const orderIds = orders.map((o) => o.id)
   const { data: items } = await supabase
     .from('order_items')
-    .select('order_id, quantity')
+    .select('id, order_id, product_id, product_name, product_thumbnail_url, unit_price, quantity, subtotal')
     .in('order_id', orderIds)
+    .order('created_at')
 
-  const countMap = new Map<string, number>()
-  for (const it of items ?? []) {
-    countMap.set(it.order_id, (countMap.get(it.order_id) ?? 0) + 1)
+  const itemsMap = new Map<string, OrderItemRow[]>()
+  for (const it of (items ?? []) as OrderItemRow[]) {
+    const arr = itemsMap.get(it.order_id) ?? []
+    arr.push(it)
+    itemsMap.set(it.order_id, arr)
   }
 
   return {
-    orders: orders.map((o) => ({ ...o, item_count: countMap.get(o.id) ?? 0 })),
+    orders: orders.map((o) => {
+      const its = itemsMap.get(o.id) ?? []
+      return { ...o, item_count: its.length, items: its }
+    }),
     total: count ?? 0,
   }
 }

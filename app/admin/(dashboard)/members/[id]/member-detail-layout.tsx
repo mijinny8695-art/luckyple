@@ -10,6 +10,8 @@ import {
   type MemberLoginInfo,
   type PointHistoryEntry,
 } from '../actions'
+import { assignMemberGroup, type MemberGroup } from '../groups/actions'
+import { addBlockedIp } from '@/app/admin/(dashboard)/settings/actions'
 import { formatRelativeTime } from '@/lib/relative-time'
 import { BirthdatePicker } from '@/components/birthdate-picker'
 import { AddressSearchButton } from '@/components/address-search-button'
@@ -26,15 +28,17 @@ export function MemberDetailLayout({
   member,
   history,
   loginInfo,
+  groups,
 }: {
   member: Member
   history: PointHistoryEntry[]
   loginInfo: MemberLoginInfo
+  groups: MemberGroup[]
 }) {
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.2fr_1fr]">
       <div className="space-y-5">
-        <MemberInfoCard member={member} />
+        <MemberInfoCard member={member} groups={groups} />
         <MemoCard member={member} />
       </div>
       <div className="space-y-5">
@@ -81,7 +85,7 @@ const ROW_HEIGHT = 'h-10'
 const LINE_INPUT =
   `block w-full ${ROW_HEIGHT} border-0 border-b border-zinc-300 bg-transparent px-0 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none focus:ring-0`
 
-function MemberInfoCard({ member }: { member: Member }) {
+function MemberInfoCard({ member, groups }: { member: Member; groups: MemberGroup[] }) {
   const router = useRouter()
   const [saving, setSaving] = useState<null | string>(null)
   const [name, setName] = useState(member.name ?? '')
@@ -148,6 +152,14 @@ function MemberInfoCard({ member }: { member: Member }) {
       <div className="divide-y divide-zinc-100">
         <Row label="회원 유형">
           <span className="text-sm text-zinc-900">{member.role === 'admin' ? '관리자' : '일반회원'}</span>
+        </Row>
+        <Row label="그룹">
+          <GroupSelect
+            memberId={member.id}
+            currentGroupId={member.group_id}
+            groups={groups}
+            onChanged={() => router.refresh()}
+          />
         </Row>
         <Row label="계정" required>
           <p className="text-sm text-zinc-900">{member.email}</p>
@@ -291,18 +303,107 @@ function BirthdateInline({
   )
 }
 
+function formatKst(iso: string): string {
+  // 서버/클라이언트 어디서나 동일한 결과를 보장하기 위해
+  // toLocaleString 대신 UTC + 9h(KST)로 직접 포매팅
+  const d = new Date(iso)
+  const k = new Date(d.getTime() + 9 * 60 * 60 * 1000)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${k.getUTCFullYear()}-${pad(k.getUTCMonth() + 1)}-${pad(k.getUTCDate())} ${pad(k.getUTCHours())}:${pad(k.getUTCMinutes())}`
+}
+
+function LastLoginIp({ ip, memberLabel }: { ip: string; memberLabel: string }) {
+  const [blocking, setBlocking] = useState(false)
+  const [blocked, setBlocked] = useState(false)
+
+  async function handleBlock() {
+    if (blocked || blocking) return
+    if (!confirm(`「${memberLabel}」 의 IP 「${ip}」 를 차단하시겠습니까?\n차단된 IP는 사이트에 접속할 수 없습니다.`)) return
+    setBlocking(true)
+    const r = await addBlockedIp(ip, `회원상세 차단: ${memberLabel}`)
+    setBlocking(false)
+    if (r.error) {
+      // 이미 차단된 경우 메시지 그대로 노출하되 UI도 차단 상태로 전환
+      if (r.error.includes('이미 차단')) {
+        setBlocked(true)
+      } else {
+        alert(r.error)
+        return
+      }
+    }
+    setBlocked(true)
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <p className="font-mono text-sm text-zinc-900">{ip}</p>
+      {blocked ? (
+        <span className="inline-flex items-center gap-1 rounded-md bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-500">
+          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+          차단됨
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={handleBlock}
+          disabled={blocking}
+          className="inline-flex items-center gap-1 rounded-md bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-600 hover:bg-rose-100 disabled:opacity-60"
+          title="이 IP의 사이트 접속을 차단합니다"
+        >
+          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L18.364 5.636M5.636 18.364l12.728-12.728" />
+          </svg>
+          {blocking ? '차단 중...' : '차단'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function GroupSelect({
+  memberId,
+  currentGroupId,
+  groups,
+  onChanged,
+}: {
+  memberId: string
+  currentGroupId: string | null
+  groups: MemberGroup[]
+  onChanged: () => void
+}) {
+  const [saving, setSaving] = useState(false)
+  return (
+    <div className="flex items-center gap-2">
+      <select
+        value={currentGroupId ?? ''}
+        disabled={saving}
+        onChange={async (e) => {
+          const next = e.target.value || null
+          setSaving(true)
+          const r = await assignMemberGroup(memberId, next)
+          setSaving(false)
+          if (r.error) {
+            alert(r.error)
+            return
+          }
+          onChanged()
+        }}
+        className="h-9 rounded-md border border-zinc-300 bg-white px-2 text-sm focus:border-zinc-900 focus:outline-none"
+      >
+        <option value="">그룹 없음</option>
+        {groups.map((g) => (
+          <option key={g.id} value={g.id}>{g.name}</option>
+        ))}
+      </select>
+      {saving && <span className="text-xs text-zinc-400">저장 중…</span>}
+    </div>
+  )
+}
+
 function ActivityCard({ member, loginInfo }: { member: Member; loginInfo: MemberLoginInfo }) {
-  const joined = new Date(member.created_at).toLocaleString('ko-KR', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-    .replace(/\.\s/g, '-')
-    .replace(/\.$/, '')
-    .replace('- ', ' ')
+  const joined = formatKst(member.created_at)
 
   return (
     <Card title="활동 정보">
@@ -324,7 +425,7 @@ function ActivityCard({ member, loginInfo }: { member: Member; loginInfo: Member
         </Row>
         <Row label="최종 로그인 IP">
           {loginInfo.last_login_ip ? (
-            <p className="font-mono text-sm text-zinc-900">{loginInfo.last_login_ip}</p>
+            <LastLoginIp ip={loginInfo.last_login_ip} memberLabel={member.name || member.email} />
           ) : (
             <p className="text-sm text-zinc-400">기록 없음</p>
           )}

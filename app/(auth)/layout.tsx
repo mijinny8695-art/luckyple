@@ -27,6 +27,7 @@ export default async function AuthLayout({
         navFontSize={site.design?.nav_font_size}
         navColor={site.design?.nav_color}
         navHoverColor={site.design?.nav_hover_color}
+        headerAuthConfigRaw={(site.design as unknown as { header_auth_config?: unknown } | null)?.header_auth_config}
       />
       <main>{children}</main>
       <Footer

@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getMemberById, getMemberLoginInfo, getMemberPointHistory } from '../actions'
+import { getGroups } from '../groups/actions'
 import { MemberDetailLayout } from './member-detail-layout'
 
 export const metadata = { title: '회원 상세' }
@@ -13,9 +14,10 @@ export default async function MemberDetailPage({
   const { id } = await params
   const member = await getMemberById(id)
   if (!member) notFound()
-  const [history, loginInfo] = await Promise.all([
+  const [history, loginInfo, groups] = await Promise.all([
     getMemberPointHistory(id, 50),
     getMemberLoginInfo(id),
+    getGroups(),
   ])
 
   return (
@@ -26,7 +28,7 @@ export default async function MemberDetailPage({
         <span className="text-zinc-900">{member.name || member.email}</span>
       </div>
 
-      <MemberDetailLayout member={member} history={history} loginInfo={loginInfo} />
+      <MemberDetailLayout member={member} history={history} loginInfo={loginInfo} groups={groups} />
     </div>
   )
 }
