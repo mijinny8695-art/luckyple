@@ -4,8 +4,14 @@ import { useEffect, useState, useTransition } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { updateProductStatus, duplicateProduct } from '@/app/admin/(dashboard)/products/actions'
+import {
+  updateProductStatus,
+  duplicateProduct,
+  bulkUpdatePrice,
+  bulkUpdateCategories,
+} from '@/app/admin/(dashboard)/products/actions'
 import { Spinner } from '@/components/spinner'
+import { formatProductPrice } from '@/lib/format-price'
 
 type ProductStatus = 'active' | 'soldout' | 'hidden'
 
@@ -22,6 +28,14 @@ type Product = {
   categories?: { id: string; name: string; category_no: string | null }[]
 }
 
+type FlatCategory = {
+  id: string
+  name: string
+  category_no: string | null
+  parent_id: string | null
+  level: number
+}
+
 const statusConfig: Record<ProductStatus, { label: string; bg: string; text: string }> = {
   active: { label: '판매중', bg: 'bg-emerald-50', text: 'text-emerald-700' },
   soldout: { label: '품절', bg: 'bg-amber-50', text: 'text-amber-700' },
@@ -33,11 +47,13 @@ export function ProductTable({
   total,
   page,
   size,
+  categories = [],
 }: {
   products: Product[]
   total: number
   page: number
   size: number
+  categories?: FlatCategory[]
 }) {
   const router = useRouter()
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -46,6 +62,11 @@ export function ProductTable({
   const [busy, setBusy] = useState<null | { label: string }>(null)
   const [awaitingRefresh, setAwaitingRefresh] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [showPriceModal, setShowPriceModal] = useState(false)
+  const [priceInput, setPriceInput] = useState('')
+  const [showCategoryModal, setShowCategoryModal] = useState(false)
+  const [bulkCategoryIds, setBulkCategoryIds] = useState<Set<string>>(new Set())
+  const [expandedBulkCats, setExpandedBulkCats] = useState<Set<string>>(new Set())
 
   // router.refresh() 가 완료되어 목록이 다시 렌더된 뒤에 로딩창을 닫음
   useEffect(() => {
@@ -127,6 +148,25 @@ export function ProductTable({
                 {statusConfig[s].label}
               </button>
             ))}
+            <button
+              onClick={() => {
+                setPriceInput('')
+                setShowPriceModal(true)
+              }}
+              className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+            >
+              판매가 변경
+            </button>
+            <button
+              onClick={() => {
+                setBulkCategoryIds(new Set())
+                setExpandedBulkCats(new Set())
+                setShowCategoryModal(true)
+              }}
+              className="rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700"
+            >
+              카테고리 변경
+            </button>
             <button
               onClick={async () => {
                 const ids = [...selected]
@@ -227,8 +267,12 @@ export function ProductTable({
                         </p>
                       </Link>
                     </td>
-                    <td className="px-4 py-3 text-right font-semibold text-zinc-900 whitespace-nowrap">
-                      {product.price.toLocaleString()}원
+                    <td className="px-4 py-3 text-right font-semibold whitespace-nowrap">
+                      {product.price > 0 ? (
+                        <span className="text-zinc-900">{product.price.toLocaleString()}원</span>
+                      ) : (
+                        <span className="text-rose-600">{formatProductPrice(product.price)}</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
@@ -362,6 +406,162 @@ export function ProductTable({
         </div>
       )}
 
+      {/* 판매가 일괄 변경 모달 */}
+      {showPriceModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="mx-4 w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="bg-indigo-50 px-6 py-5">
+              <h3 className="text-center text-lg font-bold text-zinc-900">판매가 일괄 변경</h3>
+              <p className="mt-1 text-center text-sm text-zinc-600">
+                선택한 <span className="font-bold text-indigo-600">{selected.size}개</span> 상품의 판매가를 변경합니다.
+              </p>
+            </div>
+            <div className="px-6 py-5">
+              <label className="mb-1 block text-xs font-medium text-zinc-500">판매가 (원)</label>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                step={1}
+                autoFocus
+                value={priceInput}
+                onChange={(e) => setPriceInput(e.target.value)}
+                placeholder="예: 12000"
+                className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+              />
+              <p className="mt-2 text-xs text-zinc-500">
+                <span className="font-medium text-rose-600">0</span>으로 입력하면 상품 페이지에 <span className="font-medium text-rose-600">"가격문의"</span>로 표시됩니다.
+              </p>
+            </div>
+            <div className="flex gap-3 px-6 pb-5">
+              <button
+                onClick={() => setShowPriceModal(false)}
+                className="flex-1 rounded-xl border border-zinc-300 py-2.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
+              >
+                취소
+              </button>
+              <button
+                onClick={async () => {
+                  const raw = priceInput.trim()
+                  if (raw === '' || Number.isNaN(Number(raw)) || Number(raw) < 0) {
+                    alert('0 이상의 숫자를 입력해주세요.')
+                    return
+                  }
+                  const price = Math.floor(Number(raw))
+                  const ids = [...selected]
+                  setShowPriceModal(false)
+                  setBusy({ label: `${ids.length}개 상품 판매가 변경 중...` })
+                  const r = await bulkUpdatePrice(ids, price)
+                  if (r?.error) {
+                    alert(r.error)
+                    setBusy(null)
+                    return
+                  }
+                  setSelected(new Set())
+                  refreshAndClose()
+                }}
+                className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700"
+              >
+                적용
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 카테고리 일괄 변경 모달 */}
+      {showCategoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="mx-4 flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="bg-purple-50 px-6 py-5">
+              <h3 className="text-center text-lg font-bold text-zinc-900">카테고리 일괄 변경</h3>
+              <p className="mt-1 text-center text-sm text-zinc-600">
+                선택한 <span className="font-bold text-purple-600">{selected.size}개</span> 상품의 카테고리를{' '}
+                <span className="font-bold text-purple-600">아래 체크된 항목으로 교체</span>합니다.
+              </p>
+              <p className="mt-1 text-center text-[11px] text-zinc-500">
+                기존에 연결된 카테고리는 모두 해제되고, 새로 체크한 카테고리만 적용됩니다.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-b border-zinc-100 px-5 py-2.5 text-xs">
+              <span className="text-zinc-500">
+                선택됨: <span className="font-semibold text-purple-700">{bulkCategoryIds.size}개</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setBulkCategoryIds(new Set())}
+                className="rounded border border-zinc-300 px-2 py-1 text-zinc-600 hover:bg-zinc-50"
+              >
+                전체 해제
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-3 py-2">
+              {categories.length === 0 ? (
+                <p className="py-8 text-center text-sm text-zinc-400">등록된 카테고리가 없습니다.</p>
+              ) : (
+                <BulkCategoryTree
+                  categories={categories}
+                  checkedIds={bulkCategoryIds}
+                  onToggle={(id) => {
+                    setBulkCategoryIds((prev) => {
+                      const next = new Set(prev)
+                      if (next.has(id)) next.delete(id)
+                      else next.add(id)
+                      return next
+                    })
+                  }}
+                  expandedIds={expandedBulkCats}
+                  onToggleExpand={(id) => {
+                    setExpandedBulkCats((prev) => {
+                      const next = new Set(prev)
+                      if (next.has(id)) next.delete(id)
+                      else next.add(id)
+                      return next
+                    })
+                  }}
+                />
+              )}
+            </div>
+
+            <div className="flex gap-3 border-t border-zinc-100 bg-white px-6 py-4">
+              <button
+                onClick={() => setShowCategoryModal(false)}
+                className="flex-1 rounded-xl border border-zinc-300 py-2.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
+              >
+                취소
+              </button>
+              <button
+                onClick={async () => {
+                  const ids = [...selected]
+                  const catIds = [...bulkCategoryIds]
+                  if (catIds.length === 0) {
+                    const ok = confirm(
+                      '체크된 카테고리가 없습니다.\n선택한 상품들의 카테고리 연결을 모두 해제할까요?',
+                    )
+                    if (!ok) return
+                  }
+                  setShowCategoryModal(false)
+                  setBusy({ label: `${ids.length}개 상품 카테고리 변경 중...` })
+                  const r = await bulkUpdateCategories(ids, catIds)
+                  if (r?.error) {
+                    alert(r.error)
+                    setBusy(null)
+                    return
+                  }
+                  setSelected(new Set())
+                  refreshAndClose()
+                }}
+                className="flex-1 rounded-xl bg-purple-600 py-2.5 text-sm font-medium text-white transition hover:bg-purple-700"
+              >
+                적용
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 전체 화면 로딩 오버레이 (복제/삭제/상태 변경 진행 중) */}
       {busy && typeof document !== 'undefined' &&
         createPortal(
@@ -378,5 +578,141 @@ export function ProductTable({
           document.body,
         )}
     </>
+  )
+}
+
+const bulkLevelBorders = [
+  'border-l-blue-500',
+  'border-l-green-500',
+  'border-l-amber-500',
+  'border-l-rose-500',
+]
+
+type BulkTreeNode = FlatCategory & { children: BulkTreeNode[] }
+
+function BulkCategoryTree({
+  categories,
+  checkedIds,
+  onToggle,
+  expandedIds,
+  onToggleExpand,
+}: {
+  categories: FlatCategory[]
+  checkedIds: Set<string>
+  onToggle: (id: string) => void
+  expandedIds: Set<string>
+  onToggleExpand: (id: string) => void
+}) {
+  const tree: BulkTreeNode[] = (() => {
+    const map = new Map<string, BulkTreeNode>()
+    const roots: BulkTreeNode[] = []
+    for (const cat of categories) map.set(cat.id, { ...cat, children: [] })
+    for (const cat of categories) {
+      const node = map.get(cat.id)!
+      if (cat.parent_id && map.has(cat.parent_id)) {
+        map.get(cat.parent_id)!.children.push(node)
+      } else {
+        roots.push(node)
+      }
+    }
+    return roots
+  })()
+
+  return (
+    <div className="space-y-1">
+      {tree.map((node) => (
+        <BulkCategoryNode
+          key={node.id}
+          node={node}
+          checkedIds={checkedIds}
+          onToggle={onToggle}
+          expandedIds={expandedIds}
+          onToggleExpand={onToggleExpand}
+        />
+      ))}
+    </div>
+  )
+}
+
+function BulkCategoryNode({
+  node,
+  checkedIds,
+  onToggle,
+  expandedIds,
+  onToggleExpand,
+}: {
+  node: BulkTreeNode
+  checkedIds: Set<string>
+  onToggle: (id: string) => void
+  expandedIds: Set<string>
+  onToggleExpand: (id: string) => void
+}) {
+  const hasChildren = node.children.length > 0
+  const isOpen = expandedIds.has(node.id)
+  const isChecked = checkedIds.has(node.id)
+
+  return (
+    <div>
+      <div
+        className={`flex items-center gap-1.5 rounded-lg border-l-4 px-2 py-1.5 text-[13px] ${
+          bulkLevelBorders[node.level - 1]
+        } ${isChecked ? 'bg-purple-50' : 'bg-white hover:bg-zinc-50'}`}
+        style={{ marginLeft: (node.level - 1) * 12 }}
+      >
+        {hasChildren ? (
+          <button
+            type="button"
+            onClick={() => onToggleExpand(node.id)}
+            className="flex h-5 w-5 flex-shrink-0 items-center justify-center text-zinc-400 hover:text-zinc-700"
+          >
+            {isOpen ? '▼' : '▶'}
+          </button>
+        ) : (
+          <span className="w-5 flex-shrink-0" />
+        )}
+
+        <button
+          type="button"
+          onClick={() => onToggle(node.id)}
+          className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded transition-colors ${
+            isChecked ? 'bg-purple-600 text-white' : 'border border-zinc-300 bg-white hover:border-zinc-400'
+          }`}
+        >
+          {isChecked && (
+            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          )}
+        </button>
+
+        <span className="flex-shrink-0 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500">
+          {node.level}차
+        </span>
+
+        <button
+          type="button"
+          onClick={() => onToggle(node.id)}
+          className="flex-1 truncate text-left text-zinc-700"
+          title={node.name}
+        >
+          {node.name}
+        </button>
+      </div>
+
+      {hasChildren && isOpen && (
+        <div className="mt-1 space-y-1">
+          {node.children.map((child) => (
+            <BulkCategoryNode
+              key={child.id}
+              node={child}
+              checkedIds={checkedIds}
+              onToggle={onToggle}
+              expandedIds={expandedIds}
+              onToggleExpand={onToggleExpand}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

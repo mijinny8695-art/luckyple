@@ -182,6 +182,7 @@ export default async function ProductsPage({
               total={total}
               page={page}
               size={size}
+              categories={categories as any}
             />
           )}
 

@@ -418,6 +418,74 @@ export async function toggleProductActive(id: string, isActive: boolean) {
   return { success: true }
 }
 
+export async function bulkUpdatePrice(ids: string[], price: number) {
+  if (ids.length === 0) return { success: true }
+  const supabase = await createClient()
+
+  const safePrice = Number.isFinite(price) && price >= 0 ? Math.floor(price) : 0
+  const { error } = await supabase
+    .from('products')
+    .update({ price: safePrice })
+    .in('id', ids)
+
+  if (error) {
+    return { error: '판매가 일괄 변경 중 오류가 발생했습니다.' }
+  }
+
+  revalidatePath('/admin/products')
+  return { success: true }
+}
+
+export async function bulkUpdateCategories(ids: string[], categoryIds: string[]) {
+  if (ids.length === 0) return { success: true }
+  const supabase = await createClient()
+
+  // 새 카테고리에 해당하는 category_no 수집 (products.category_nos 동기화용)
+  let categoryNos: string[] = []
+  if (categoryIds.length > 0) {
+    const { data: cats } = await supabase
+      .from('categories')
+      .select('category_no')
+      .in('id', categoryIds)
+      .not('category_no', 'is', null)
+    categoryNos = (cats ?? [])
+      .map((c) => c.category_no)
+      .filter((v): v is string => !!v)
+  }
+
+  // 기존 product_categories 연결 일괄 삭제 (선택된 상품 한정)
+  const { error: delErr } = await supabase
+    .from('product_categories')
+    .delete()
+    .in('product_id', ids)
+  if (delErr) {
+    return { error: '기존 카테고리 연결 삭제 중 오류가 발생했습니다.' }
+  }
+
+  // 새 연결 insert
+  if (categoryIds.length > 0) {
+    const relations = ids.flatMap((productId) =>
+      categoryIds.map((categoryId) => ({ product_id: productId, category_id: categoryId })),
+    )
+    const { error: insErr } = await supabase.from('product_categories').insert(relations)
+    if (insErr) {
+      return { error: '새 카테고리 연결 추가 중 오류가 발생했습니다.' }
+    }
+  }
+
+  // products.category_nos 동기화
+  const { error: updErr } = await supabase
+    .from('products')
+    .update({ category_nos: categoryNos })
+    .in('id', ids)
+  if (updErr) {
+    return { error: '카테고리 번호 동기화 중 오류가 발생했습니다.' }
+  }
+
+  revalidatePath('/admin/products')
+  return { success: true }
+}
+
 export async function updateProductStatus(id: string, status: string) {
   const supabase = await createClient()
 
