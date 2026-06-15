@@ -202,6 +202,66 @@ export async function updateCategory(formData: FormData) {
   return { success: true }
 }
 
+export type CategoryListDisplaySettings = {
+  pagination_mode: CategoryPaginationMode
+  products_per_row: number
+  products_rows: number
+  banner_url: string | null
+  banner_video_url: string | null
+  banner_show_overlay: boolean
+}
+
+export async function getCategoryListDisplay(id: string): Promise<CategoryListDisplaySettings | null> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('categories')
+    .select('pagination_mode, products_per_row, products_rows, banner_url, banner_video_url, banner_show_overlay')
+    .eq('id', id)
+    .single()
+  if (error || !data) return null
+  return {
+    pagination_mode: (data.pagination_mode === 'pages' ? 'pages' : 'load_more') as CategoryPaginationMode,
+    products_per_row: Math.min(8, Math.max(1, data.products_per_row ?? 4)),
+    products_rows: Math.min(30, Math.max(1, data.products_rows ?? 10)),
+    banner_url: (data.banner_url as string | null) ?? null,
+    banner_video_url: (data.banner_video_url as string | null) ?? null,
+    banner_show_overlay: data.banner_show_overlay !== false,
+  }
+}
+
+export async function updateCategoryListDisplay(
+  id: string,
+  settings: CategoryListDisplaySettings,
+) {
+  const supabase = await createClient()
+
+  const paginationMode: CategoryPaginationMode =
+    settings.pagination_mode === 'pages' ? 'pages' : 'load_more'
+  const perRow = Math.min(8, Math.max(1, Math.floor(settings.products_per_row || 4)))
+  const rows = Math.min(30, Math.max(1, Math.floor(settings.products_rows || 10)))
+
+  const { error } = await supabase
+    .from('categories')
+    .update({
+      pagination_mode: paginationMode,
+      products_per_row: perRow,
+      products_rows: rows,
+      banner_url: settings.banner_url?.trim() || null,
+      banner_video_url: settings.banner_video_url?.trim() || null,
+      banner_show_overlay: !!settings.banner_show_overlay,
+    })
+    .eq('id', id)
+
+  if (error) {
+    return { error: '카테고리 표시 설정 저장 중 오류가 발생했습니다.' }
+  }
+
+  revalidatePath('/admin/categories')
+  revalidatePath('/category/[id]', 'page')
+  revalidatePath('/')
+  return { success: true }
+}
+
 export async function deleteCategory(id: string) {
   const supabase = await createClient()
 

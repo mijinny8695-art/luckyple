@@ -16,6 +16,12 @@ import type {
   SiteDesign,
 } from '@/lib/types/design'
 import { saveLayout, saveLayoutDraft, clearLayoutDraft, saveNavStyleDraft } from './actions'
+import {
+  getCategoryListDisplay,
+  updateCategoryListDisplay,
+  uploadCategoryImage,
+  type CategoryListDisplaySettings,
+} from '@/app/admin/(dashboard)/categories/actions'
 import { HeaderAuthEditor } from './header-auth-editor'
 import { getHeaderAuthConfig, type HeaderAuthConfig } from '@/lib/header-auth-config'
 import { BannerPickerModal } from './banner-picker-modal'
@@ -59,6 +65,22 @@ export function LayoutManager({
     type: 'success' | 'error'
     text: string
   } | null>(null)
+
+  // 미리보기 iframe 의 현재 경로 추적 — 사용자가 네비 메뉴를 클릭해서 다른 페이지로 이동하면 이 값이 변함.
+  // '/' 면 메인(레이아웃 편집 모드), '/category/{id}' 면 카테고리 페이지(상품 목록 표시 설정 편집 모드).
+  const [iframePath, setIframePath] = useState<string>('/')
+  const [categoryListSettings, setCategoryListSettings] = useState<CategoryListDisplaySettings | null>(null)
+  const [categoryListSaving, setCategoryListSaving] = useState(false)
+  const [categoryListMessage, setCategoryListMessage] = useState<string | null>(null)
+  const [showCategoryEditModal, setShowCategoryEditModal] = useState(false)
+  const isMainPreview = !iframePath.startsWith('/category/')
+  const currentCategoryId = iframePath.startsWith('/category/')
+    ? iframePath.split('/')[2]?.split('?')[0] ?? null
+    : null
+  const currentCategoryName =
+    currentCategoryId
+      ? allCategories.find((c) => c.id === currentCategoryId)?.name ?? '카테고리'
+      : null
   const [pickerSection, setPickerSection] =
     useState<BannerSectionConfig | null>(null)
   const [pickerIndex, setPickerIndex] = useState<number>(-1)
@@ -125,7 +147,7 @@ export function LayoutManager({
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   // 헤더 네비게이션 영역 좌표 (iframe document 기준 절대 top + 높이)
   const [navRect, setNavRect] = useState<{ top: number; height: number } | null>(null)
-  const [hoveredNav, setHoveredNav] = useState(false)
+  // 네비 영역 hover 시각효과는 이제 pointer-events-none 으로 동작하므로 hoveredNav 상태는 제거됨
   // 헤더 우측 인증 메뉴 영역
   const [authRect, setAuthRect] = useState<{ top: number; right: number; width: number; height: number } | null>(null)
   const [hoveredAuth, setHoveredAuth] = useState(false)
@@ -496,6 +518,16 @@ export function LayoutManager({
     if (!iframe) return
     const doc = iframe.contentDocument
     if (!doc) return
+    // 현재 iframe 경로 캡처 — 사용자가 네비를 통해 다른 페이지로 이동했을 수도 있음
+    try {
+      const winLoc = iframe.contentWindow?.location
+      if (winLoc) {
+        const nextPath = winLoc.pathname + winLoc.search
+        setIframePath((prev) => (prev === nextPath ? prev : nextPath))
+      }
+    } catch {
+      // cross-origin 등 read 실패 시 무시
+    }
     const nodes = doc.querySelectorAll<HTMLElement>('[data-section-id]')
     const next: Record<string, { top: number; left: number; width: number; height: number }> = {}
     nodes.forEach((el) => {
@@ -548,6 +580,50 @@ export function LayoutManager({
     if (docHeight > 0) setIframeHeight(docHeight)
     setSectionRects(next)
   }, [])
+
+  // iframe 이 카테고리 페이지로 이동한 경우, 해당 카테고리의 상품 목록 표시 설정을 로드.
+  // currentCategoryId 가 null 이면 패널 자체를 렌더하지 않으므로 별도 reset 불필요.
+  useEffect(() => {
+    if (!currentCategoryId) return
+    let cancelled = false
+    getCategoryListDisplay(currentCategoryId).then((s) => {
+      if (cancelled) return
+      setCategoryListSettings(
+        s ?? {
+          pagination_mode: 'load_more',
+          products_per_row: 4,
+          products_rows: 10,
+          banner_url: null,
+          banner_video_url: null,
+          banner_show_overlay: true,
+        },
+      )
+      setCategoryListMessage(null)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [currentCategoryId])
+
+  // 미리보기 iframe 의 src 를 명시적으로 바꾸는 helper.
+  // 일반 a 태그 클릭으로도 iframe 안에서 자연스럽게 네비게이션 되지만,
+  // 「메인으로 돌아가기」 같은 admin UI 트리거용으로 사용.
+  const navigatePreview = useCallback(
+    (path: string) => {
+      const iframe = iframeRef.current
+      if (!iframe) return
+      try {
+        if (iframe.contentWindow) {
+          iframe.contentWindow.location.href = path
+          return
+        }
+      } catch {
+        // ignored
+      }
+      iframe.src = path
+    },
+    [],
+  )
 
   // iframe 로드 + scroll/resize 시 재측정. previewKey가 바뀌면 iframe 재로드되므로 다시 바인딩.
   useEffect(() => {
@@ -796,6 +872,31 @@ export function LayoutManager({
         </div>
       )}
 
+      {/* 현재 미리보기 페이지 표시 — 카테고리 페이지로 이동한 경우 메인으로 돌아가기 버튼 노출 */}
+      {!isMainPreview && (
+        <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm">
+          <div className="flex items-center gap-2 text-blue-900">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+            </svg>
+            <span>
+              현재 미리보기: <span className="font-semibold">{currentCategoryName ?? '카테고리'}</span>
+              <span className="ml-2 text-[11px] text-blue-700">(아래 「상품 목록 표시」 패널에서 편집)</span>
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigatePreview(dirty ? '/?preview=draft' : '/')}
+            className="flex cursor-pointer items-center gap-1.5 rounded-md border border-blue-300 bg-white px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            메인으로 돌아가기
+          </button>
+        </div>
+      )}
+
       {/* PC / 모바일 미리보기 토글 + 되돌리기 */}
       <div className="relative flex items-center justify-center">
         <div className="inline-flex overflow-hidden rounded-lg border border-zinc-200 bg-white">
@@ -902,7 +1003,11 @@ export function LayoutManager({
             <iframe
               ref={iframeRef}
               key={previewKey}
-              src={dirty ? '/?preview=draft' : '/'}
+              src={
+                isMainPreview
+                  ? (dirty ? '/?preview=draft' : '/')
+                  : iframePath
+              }
               title="실제 페이지 미리보기"
               className="block w-full"
               style={{ height: `${iframeHeight}px`, border: 'none' }}
@@ -911,28 +1016,22 @@ export function LayoutManager({
 
             {/* 섹션 오버레이 — 저장된 페이지의 섹션 위에 컨트롤 표시 */}
             <div className="pointer-events-none absolute inset-0">
-              {/* 네비게이션 위젯 오버레이 — 헤더의 nav 영역 */}
+              {/* 네비게이션 위젯 오버레이 — 헤더의 nav 영역.
+                  pointer-events-none 으로 네비 메뉴 클릭이 iframe 내부 링크에 그대로 전달되도록 함.
+                  → admin 이 네비 메뉴를 누르면 iframe 이 해당 카테고리 페이지로 이동 */}
               {navRect && (
                 <div
-                  onMouseEnter={() => setHoveredNav(true)}
-                  onMouseLeave={() => setHoveredNav(false)}
-                  className={`pointer-events-auto absolute transition ${
-                    hoveredNav ? 'border-2 border-blue-500 bg-blue-500/5' : 'border-2 border-transparent hover:border-blue-300'
-                  }`}
+                  className="pointer-events-none absolute border-2 border-transparent transition group-hover/nav:border-blue-300"
                   style={{ top: navRect.top, left: 0, width: '100%', height: navRect.height }}
                 >
-                  {/* 좌상단 타입 뱃지 */}
+                  {/* 좌상단 타입 뱃지 (시각 표시만, 클릭 안 막음) */}
                   <div className="absolute left-2 top-2 flex items-center gap-1">
-                    <span className="rounded bg-blue-500 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
-                      네비
+                    <span className="rounded bg-blue-500/90 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
+                      네비 (메뉴 클릭 시 해당 페이지 미리보기)
                     </span>
                   </div>
-                  {/* 우상단 컨트롤 — 네비는 위/아래/숨김/삭제 없이 「편집」만 */}
-                  <div
-                    className={`absolute right-2 top-2 flex items-center gap-1 rounded-lg bg-white px-1 py-1 shadow-md ring-1 ring-zinc-200 transition ${
-                      hoveredNav ? 'opacity-100' : 'opacity-0'
-                    }`}
-                  >
+                  {/* 우상단 「편집」 버튼만 pointer-events-auto — 네비 스타일 편집용 */}
+                  <div className="pointer-events-auto absolute right-2 top-2 flex items-center gap-1 rounded-lg bg-white px-1 py-1 shadow-md ring-1 ring-zinc-200">
                     <button
                       type="button"
                       onClick={openNavEditor}
@@ -941,7 +1040,7 @@ export function LayoutManager({
                       <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                       </svg>
-                      편집
+                      네비 스타일
                     </button>
                   </div>
                 </div>
@@ -986,7 +1085,7 @@ export function LayoutManager({
                 </div>
               )}
 
-              {sections.map((section, idx) => {
+              {isMainPreview && sections.map((section, idx) => {
                 const rect = sectionRects[section.id]
                 if (!rect) return null
                 const { type } = getSectionLabel(section)
@@ -1089,7 +1188,7 @@ export function LayoutManager({
                 )
               })}
 
-              {sections.length === 0 && (
+              {isMainPreview && sections.length === 0 && (
                 <div className="pointer-events-auto absolute inset-0 flex items-center justify-center bg-zinc-50/90 text-sm text-zinc-400">
                   우하단 「위젯 추가」 버튼으로 레이아웃을 구성하세요
                 </div>
@@ -1098,14 +1197,34 @@ export function LayoutManager({
           </div>
         </div>
         <p className="mt-2 text-center text-[11px] text-zinc-400">
-          {dirty
-            ? '🟡 편집 중 — 미리보기는 본인에게만 보이며 일반 방문자에게는 노출되지 않습니다 · 「저장」 또는 「되돌리기」 선택'
-            : '미리보기는 저장된 상태입니다 · 변경하면 즉시 미리보기에 반영됩니다 (저장 전까지 실제 사이트엔 적용 안 됨)'}
+          {isMainPreview
+            ? (dirty
+                ? '🟡 편집 중 — 미리보기는 본인에게만 보이며 일반 방문자에게는 노출되지 않습니다 · 「저장」 또는 「되돌리기」 선택'
+                : '미리보기는 저장된 상태입니다 · 변경하면 즉시 미리보기에 반영됩니다 (저장 전까지 실제 사이트엔 적용 안 됨)')
+            : '카테고리 페이지 미리보기 — 우하단 「편집」 버튼으로 상품 목록 표시 설정을 변경하세요'}
         </p>
+
       </div>
 
 
-      {/* 우하단 플로팅 — 저장 + 위젯 추가 */}
+      {/* 우하단 플로팅 — 카테고리 페이지 모드면 「편집」 버튼만, 메인이면 저장 + 위젯 추가 */}
+      {!isMainPreview ? (
+        <div className="fixed bottom-6 right-6 z-40">
+          <button
+            type="button"
+            onClick={() => setShowCategoryEditModal(true)}
+            disabled={!currentCategoryId}
+            className="flex h-14 cursor-pointer items-center gap-2 rounded-full bg-blue-600 px-6 text-sm font-semibold text-white shadow-lg ring-1 ring-blue-600/20 transition hover:scale-105 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            title="상품 목록 표시 편집"
+            aria-label="상품 목록 표시 편집"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+            편집
+          </button>
+        </div>
+      ) : (
       <div className="fixed bottom-6 right-6 z-40 flex items-center gap-3">
         <button
           type="button"
@@ -1222,6 +1341,55 @@ export function LayoutManager({
         </button>
         </div>
       </div>
+      )}
+
+      {/* 카테고리 페이지 — 상품 목록 표시 편집 모달 */}
+      {showCategoryEditModal && !isMainPreview && currentCategoryId && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => {
+            if (!categoryListSaving) setShowCategoryEditModal(false)
+          }}
+        >
+          <div
+            className="mx-4 max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <CategoryListEditor
+              key={currentCategoryId}
+              categoryName={currentCategoryName ?? '카테고리'}
+              settings={
+                categoryListSettings ?? {
+                  pagination_mode: 'load_more',
+                  products_per_row: 4,
+                  products_rows: 10,
+                  banner_url: null,
+                  banner_video_url: null,
+                  banner_show_overlay: true,
+                }
+              }
+              saving={categoryListSaving}
+              message={categoryListMessage}
+              onClose={() => setShowCategoryEditModal(false)}
+              onChange={(next) => setCategoryListSettings(next)}
+              onSave={async () => {
+                if (!currentCategoryId || !categoryListSettings) return
+                setCategoryListSaving(true)
+                setCategoryListMessage(null)
+                const r = await updateCategoryListDisplay(currentCategoryId, categoryListSettings)
+                if (r?.error) {
+                  setCategoryListMessage(r.error)
+                  setCategoryListSaving(false)
+                } else {
+                  setPreviewKey((k) => k + 1)
+                  setCategoryListSaving(false)
+                  setShowCategoryEditModal(false)
+                }
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* 배너 선택 모달 */}
       {pickerSection && (
@@ -2486,3 +2654,347 @@ function CategoryTreePicker({
 
   return <>{level1.map((cat) => renderCat(cat, 0))}</>
 }
+
+function CategoryListEditor({
+  categoryName,
+  settings,
+  saving,
+  message,
+  onChange,
+  onSave,
+  onClose,
+}: {
+  categoryName: string
+  settings: CategoryListDisplaySettings
+  saving: boolean
+  message: string | null
+  onChange: (next: CategoryListDisplaySettings) => void
+  onSave: () => void
+  onClose?: () => void
+}) {
+  return (
+    <div className="p-5">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold text-zinc-900">
+            상품 목록 표시 — <span className="text-blue-600">{categoryName}</span>
+          </h3>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            이 카테고리 페이지에서 상품 목록이 어떻게 보일지 설정합니다.
+          </p>
+        </div>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+            aria-label="닫기"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+      </div>
+
+      {/* 카테고리 페이지 배너 */}
+      <CategoryBannerEditor settings={settings} onChange={onChange} />
+
+      {/* 페이징 방식 */}
+      <div className="mb-4">
+        <span className="mb-1.5 block text-xs font-medium text-zinc-600">페이징 방식</span>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => onChange({ ...settings, pagination_mode: 'load_more' })}
+            className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
+              settings.pagination_mode === 'load_more'
+                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                : 'border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50'
+            }`}
+          >
+            <span className="font-medium">더보기</span>
+            <span className="text-[11px] text-zinc-500">하단 버튼으로 추가 로드</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange({ ...settings, pagination_mode: 'pages' })}
+            className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
+              settings.pagination_mode === 'pages'
+                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                : 'border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50'
+            }`}
+          >
+            <span className="font-medium">페이지 번호</span>
+            <span className="text-[11px] text-zinc-500">1·2·3… 인디케이터</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 한 줄 상품 수 / 한 페이지 줄 수 */}
+      <div className="grid gap-3 md:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-zinc-600">한 줄 상품 수</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={1}
+              max={8}
+              value={settings.products_per_row}
+              onChange={(e) =>
+                onChange({
+                  ...settings,
+                  products_per_row: Math.min(8, Math.max(1, parseInt(e.target.value) || 1)),
+                })
+              }
+              className="h-10 w-24 rounded-md border border-zinc-300 px-3 text-sm focus:border-zinc-900 focus:outline-none"
+            />
+            <span className="text-xs text-zinc-500">개 (1~8)</span>
+          </div>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-zinc-600">한 페이지 줄 수</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={1}
+              max={30}
+              value={settings.products_rows}
+              onChange={(e) =>
+                onChange({
+                  ...settings,
+                  products_rows: Math.min(30, Math.max(1, parseInt(e.target.value) || 1)),
+                })
+              }
+              className="h-10 w-24 rounded-md border border-zinc-300 px-3 text-sm focus:border-zinc-900 focus:outline-none"
+            />
+            <span className="text-xs text-zinc-500">줄 (1~30)</span>
+          </div>
+        </div>
+      </div>
+      <p className="mt-2 text-[11px] text-zinc-500">
+        한 페이지에 총{' '}
+        <span className="font-semibold text-zinc-700">
+          {settings.products_per_row * settings.products_rows}
+        </span>
+        개 상품이 표시됩니다.
+      </p>
+
+      {/* 하단 액션 바 (모달 컨텍스트) */}
+      <div className="mt-5 flex items-center justify-between gap-3 border-t border-zinc-100 pt-4">
+        <span className="text-xs text-zinc-500">{message ?? ''}</span>
+        <div className="flex gap-2">
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              className="cursor-pointer rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-50"
+            >
+              취소
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saving}
+            className="cursor-pointer rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-50"
+          >
+            {saving ? '저장 중…' : '저장'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CategoryBannerEditor({
+  settings,
+  onChange,
+}: {
+  settings: CategoryListDisplaySettings
+  onChange: (next: CategoryListDisplaySettings) => void
+}) {
+  const [imageUploading, setImageUploading] = useState(false)
+  const [videoUploading, setVideoUploading] = useState(false)
+  const [videoProgress, setVideoProgress] = useState(0)
+  const imageInputRef = useRef<HTMLInputElement | null>(null)
+  const videoName = settings.banner_video_url
+    ? settings.banner_video_url.split('/').pop() ?? '등록됨'
+    : null
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImageUploading(true)
+    const fd = new FormData()
+    fd.set('file', file)
+    const result = await uploadCategoryImage(fd)
+    setImageUploading(false)
+    if (result.url) {
+      onChange({ ...settings, banner_url: result.url })
+    } else if (result.error) {
+      alert(result.error)
+    }
+    // input 초기화 — 동일 파일 재선택 가능하게
+    if (imageInputRef.current) imageInputRef.current.value = ''
+  }
+
+  async function handleVideoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setVideoUploading(true)
+    setVideoProgress(0)
+    try {
+      const res = await fetch('/api/upload-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName: file.name, contentType: file.type }),
+      })
+      const { signedUrl, publicUrl, error: urlError } = await res.json()
+      if (urlError) throw new Error(urlError)
+
+      const xhr = new XMLHttpRequest()
+      await new Promise<void>((resolve, reject) => {
+        xhr.upload.onprogress = (ev) => {
+          if (ev.lengthComputable) setVideoProgress(Math.round((ev.loaded / ev.total) * 100))
+        }
+        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error('업로드 실패')))
+        xhr.onerror = () => reject(new Error('업로드 실패'))
+        xhr.open('PUT', signedUrl)
+        xhr.setRequestHeader('Content-Type', file.type || 'video/mp4')
+        xhr.send(file)
+      })
+      onChange({ ...settings, banner_video_url: publicUrl })
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '영상 업로드 실패')
+    } finally {
+      setVideoUploading(false)
+      setVideoProgress(0)
+    }
+  }
+
+  return (
+    <div className="mb-4 rounded-lg border border-zinc-200 p-4">
+      <p className="text-sm font-medium text-zinc-900">카테고리 페이지 배너</p>
+      <p className="mb-3 text-xs text-zinc-400">
+        이 카테고리(및 하위) 페이지 상단에 표시됩니다. 영상이 있으면 영상이 우선됩니다.
+      </p>
+
+      {/* 배너 이미지 */}
+      <div className="mb-4">
+        <label className="mb-1 block text-xs font-medium text-zinc-600">배너 이미지</label>
+        <div className="flex items-start gap-3">
+          {settings.banner_url ? (
+            <div className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={settings.banner_url}
+                alt="카테고리 배너"
+                className="h-20 w-auto max-w-[280px] rounded-lg border border-zinc-200 object-cover"
+              />
+              <button
+                type="button"
+                onClick={() => onChange({ ...settings, banner_url: null })}
+                className="absolute -right-2 -top-2 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full bg-red-500 text-xs text-white hover:bg-red-600"
+              >
+                &times;
+              </button>
+            </div>
+          ) : (
+            <div className="flex h-20 w-[280px] items-center justify-center rounded-lg border-2 border-dashed border-zinc-300 text-xs text-zinc-400">
+              이미지 없음
+            </div>
+          )}
+          <div>
+            <button
+              type="button"
+              onClick={() => imageInputRef.current?.click()}
+              disabled={imageUploading}
+              className="cursor-pointer rounded-lg bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-200 disabled:opacity-50"
+            >
+              {imageUploading ? '업로드 중...' : settings.banner_url ? '이미지 변경' : '이미지 업로드'}
+            </button>
+            <p className="mt-1 text-[11px] text-zinc-400">권장: 1920 x 450px</p>
+          </div>
+        </div>
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleImageUpload}
+        />
+      </div>
+
+      {/* 배너 영상 */}
+      <div>
+        <label className="mb-1 block text-xs font-medium text-zinc-600">배너 영상 (선택)</label>
+        <div className="flex items-center gap-3">
+          {videoName ? (
+            <div className="flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2">
+              <span className="max-w-[160px] truncate text-xs text-zinc-700">{videoName}</span>
+              {!videoUploading && (
+                <button
+                  type="button"
+                  onClick={() => onChange({ ...settings, banner_video_url: null })}
+                  className="cursor-pointer text-red-500 hover:text-red-600"
+                >
+                  &times;
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="flex h-9 w-[160px] items-center justify-center rounded-lg border-2 border-dashed border-zinc-300 text-xs text-zinc-400">
+              영상 없음
+            </div>
+          )}
+          <label
+            className={`cursor-pointer rounded-lg bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-200 ${
+              videoUploading ? 'pointer-events-none opacity-50' : ''
+            }`}
+          >
+            {videoUploading ? `업로드 중... ${videoProgress}%` : videoName ? '영상 변경' : '영상 업로드'}
+            <input
+              type="file"
+              accept="video/*"
+              className="hidden"
+              onChange={handleVideoUpload}
+              disabled={videoUploading}
+            />
+          </label>
+        </div>
+        {videoUploading && (
+          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200">
+            <div className="h-full bg-zinc-900 transition-all" style={{ width: `${videoProgress}%` }} />
+          </div>
+        )}
+        <p className="mt-1 text-[11px] text-zinc-400">영상 등록 시 이미지 대신 자동재생됩니다. (MP4 권장)</p>
+      </div>
+
+      {/* 오버레이 표시 토글 */}
+      <div className="mt-4 flex items-center gap-3 border-t border-zinc-100 pt-4">
+        <button
+          type="button"
+          onClick={() => onChange({ ...settings, banner_show_overlay: !settings.banner_show_overlay })}
+          className={`relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors ${
+            settings.banner_show_overlay ? 'bg-zinc-900' : 'bg-zinc-300'
+          }`}
+        >
+          <span
+            className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+              settings.banner_show_overlay ? 'translate-x-5' : 'translate-x-0'
+            }`}
+          />
+        </button>
+        <div>
+          <p className="text-xs font-medium text-zinc-900">배너 위 텍스트·버튼 표시</p>
+          <p className="text-[11px] text-zinc-400">
+            끄면 &quot;HIGH-END&quot; 문구와 제작과정/구매후기 버튼이 숨겨집니다.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
