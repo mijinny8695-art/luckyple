@@ -258,7 +258,6 @@ export async function updateCategoryListDisplay(
 
   revalidatePath('/admin/categories')
   revalidatePath('/category/[id]', 'page')
-  revalidatePath('/')
   return { success: true }
 }
 

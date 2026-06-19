@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { formatProductPrice } from '@/lib/format-price'
 
 export const metadata = { title: '검색 결과' }
 
@@ -57,7 +58,7 @@ export default async function SearchPage({
               <div className="mt-2">
                 <p className="text-sm text-zinc-900 line-clamp-2">{product.name}</p>
                 <p className="mt-1 text-sm font-bold text-zinc-900">
-                  {product.price.toLocaleString()}원
+                  {formatProductPrice(product.price)}
                 </p>
               </div>
             </Link>

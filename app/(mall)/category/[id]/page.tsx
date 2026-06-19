@@ -48,7 +48,7 @@ export default async function CategoryPage({
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
   const { data: category } = await supabase
     .from('categories')
-    .select('id, name, slug, category_no, level, parent_id, banner_url, banner_video_url, banner_show_overlay')
+    .select('id, name, slug, category_no, level, parent_id, banner_url, banner_video_url, banner_show_overlay, pagination_mode, products_per_row, products_rows')
     .eq(isUuid ? 'id' : 'slug', id)
     .single()
 
