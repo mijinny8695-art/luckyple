@@ -592,6 +592,7 @@ export function LayoutManager({
         s ?? {
           pagination_mode: 'load_more',
           products_per_row: 4,
+          products_per_row_mobile: 2,
           products_rows: 10,
           banner_url: null,
           banner_video_url: null,
@@ -1362,6 +1363,7 @@ export function LayoutManager({
                 categoryListSettings ?? {
                   pagination_mode: 'load_more',
                   products_per_row: 4,
+                  products_per_row_mobile: 2,
                   products_rows: 10,
                   banner_url: null,
                   banner_video_url: null,
@@ -1381,7 +1383,15 @@ export function LayoutManager({
                   setCategoryListMessage(r.error)
                   setCategoryListSaving(false)
                 } else {
-                  setPreviewKey((k) => k + 1)
+                  // iframe 을 리마운트(previewKey++) 하면 src 가 다시 평가되면서
+                  // 미리보기 위치가 메인으로 튀는 케이스가 있어, 현재 카테고리 경로로
+                  // 명시적으로 reload 한다.
+                  const win = iframeRef.current?.contentWindow
+                  try {
+                    win?.location.reload()
+                  } catch {
+                    if (win) win.location.href = iframePath
+                  }
                   setCategoryListSaving(false)
                   setShowCategoryEditModal(false)
                 }
@@ -2731,10 +2741,10 @@ function CategoryListEditor({
         </div>
       </div>
 
-      {/* 한 줄 상품 수 / 한 페이지 줄 수 */}
-      <div className="grid gap-3 md:grid-cols-2">
+      {/* 한 줄 상품 수 (PC / 모바일) / 한 페이지 줄 수 */}
+      <div className="grid gap-3 md:grid-cols-3">
         <div>
-          <label className="mb-1 block text-xs font-medium text-zinc-600">한 줄 상품 수</label>
+          <label className="mb-1 block text-xs font-medium text-zinc-600">한 줄 상품 수 (PC)</label>
           <div className="flex items-center gap-2">
             <input
               type="number"
@@ -2750,6 +2760,25 @@ function CategoryListEditor({
               className="h-10 w-24 rounded-md border border-zinc-300 px-3 text-sm focus:border-zinc-900 focus:outline-none"
             />
             <span className="text-xs text-zinc-500">개 (1~8)</span>
+          </div>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-zinc-600">한 줄 상품 수 (모바일)</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={1}
+              max={4}
+              value={settings.products_per_row_mobile}
+              onChange={(e) =>
+                onChange({
+                  ...settings,
+                  products_per_row_mobile: Math.min(4, Math.max(1, parseInt(e.target.value) || 1)),
+                })
+              }
+              className="h-10 w-24 rounded-md border border-zinc-300 px-3 text-sm focus:border-zinc-900 focus:outline-none"
+            />
+            <span className="text-xs text-zinc-500">개 (1~4)</span>
           </div>
         </div>
         <div>
@@ -2777,7 +2806,7 @@ function CategoryListEditor({
         <span className="font-semibold text-zinc-700">
           {settings.products_per_row * settings.products_rows}
         </span>
-        개 상품이 표시됩니다.
+        개 상품이 표시됩니다 (PC 기준).
       </p>
 
       {/* 하단 액션 바 (모달 컨텍스트) */}

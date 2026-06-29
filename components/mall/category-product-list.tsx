@@ -20,6 +20,7 @@ export function CategoryProductList({
   fromCategoryId,
   paginationMode = 'load_more',
   perRow = 4,
+  perRowMobile = 2,
   rows = 10,
   page = 1,
 }: {
@@ -29,6 +30,7 @@ export function CategoryProductList({
   fromCategoryId?: string
   paginationMode?: 'load_more' | 'pages'
   perRow?: number
+  perRowMobile?: number
   rows?: number
   page?: number
 }) {
@@ -41,12 +43,11 @@ export function CategoryProductList({
   const pageSize = Math.max(1, perRow * rows)
   const hasMore = paginationMode === 'load_more' && products.length < total
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
-  // 모바일은 항상 2열로 유지하여 가독성 보장 (사용자 설정은 md 이상부터 적용)
-  const gridStyle: React.CSSProperties = {
-    gridTemplateColumns: `repeat(2, minmax(0, 1fr))`,
-  }
-  const mdGridStyle: React.CSSProperties = {
+  // 모바일/PC 별로 한 줄 상품 수를 분리해서 적용. inline style 로 두면 md: 변형이 못 덮어쓰므로
+  // Tailwind 의 arbitrary 클래스로 둘 다 표현하고, 값만 CSS 변수로 주입한다.
+  const gridVarStyle: React.CSSProperties = {
     ['--cat-cols' as string]: String(perRow),
+    ['--cat-cols-mobile' as string]: String(perRowMobile),
   }
 
   // 마운트 시 sessionStorage에서 복원
@@ -108,8 +109,8 @@ export function CategoryProductList({
   return (
     <>
       <div
-        className="grid gap-x-4 gap-y-8 md:[grid-template-columns:repeat(var(--cat-cols),minmax(0,1fr))]"
-        style={{ ...gridStyle, ...mdGridStyle }}
+        className="grid gap-x-4 gap-y-8 [grid-template-columns:repeat(var(--cat-cols-mobile),minmax(0,1fr))] md:[grid-template-columns:repeat(var(--cat-cols),minmax(0,1fr))]"
+        style={gridVarStyle}
       >
         {products.map((product) => (
           <Link

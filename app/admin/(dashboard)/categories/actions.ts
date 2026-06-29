@@ -205,6 +205,7 @@ export async function updateCategory(formData: FormData) {
 export type CategoryListDisplaySettings = {
   pagination_mode: CategoryPaginationMode
   products_per_row: number
+  products_per_row_mobile: number
   products_rows: number
   banner_url: string | null
   banner_video_url: string | null
@@ -215,13 +216,14 @@ export async function getCategoryListDisplay(id: string): Promise<CategoryListDi
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('categories')
-    .select('pagination_mode, products_per_row, products_rows, banner_url, banner_video_url, banner_show_overlay')
+    .select('pagination_mode, products_per_row, products_per_row_mobile, products_rows, banner_url, banner_video_url, banner_show_overlay')
     .eq('id', id)
     .single()
   if (error || !data) return null
   return {
     pagination_mode: (data.pagination_mode === 'pages' ? 'pages' : 'load_more') as CategoryPaginationMode,
     products_per_row: Math.min(8, Math.max(1, data.products_per_row ?? 4)),
+    products_per_row_mobile: Math.min(4, Math.max(1, data.products_per_row_mobile ?? 2)),
     products_rows: Math.min(30, Math.max(1, data.products_rows ?? 10)),
     banner_url: (data.banner_url as string | null) ?? null,
     banner_video_url: (data.banner_video_url as string | null) ?? null,
@@ -238,6 +240,7 @@ export async function updateCategoryListDisplay(
   const paginationMode: CategoryPaginationMode =
     settings.pagination_mode === 'pages' ? 'pages' : 'load_more'
   const perRow = Math.min(8, Math.max(1, Math.floor(settings.products_per_row || 4)))
+  const perRowMobile = Math.min(4, Math.max(1, Math.floor(settings.products_per_row_mobile || 2)))
   const rows = Math.min(30, Math.max(1, Math.floor(settings.products_rows || 10)))
 
   const { error } = await supabase
@@ -245,6 +248,7 @@ export async function updateCategoryListDisplay(
     .update({
       pagination_mode: paginationMode,
       products_per_row: perRow,
+      products_per_row_mobile: perRowMobile,
       products_rows: rows,
       banner_url: settings.banner_url?.trim() || null,
       banner_video_url: settings.banner_video_url?.trim() || null,

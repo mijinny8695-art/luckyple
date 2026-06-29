@@ -48,7 +48,7 @@ export default async function CategoryPage({
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
   const { data: category } = await supabase
     .from('categories')
-    .select('id, name, slug, category_no, level, parent_id, banner_url, banner_video_url, banner_show_overlay, pagination_mode, products_per_row, products_rows')
+    .select('id, name, slug, category_no, level, parent_id, banner_url, banner_video_url, banner_show_overlay, pagination_mode, products_per_row, products_per_row_mobile, products_rows')
     .eq(isUuid ? 'id' : 'slug', id)
     .single()
 
@@ -62,7 +62,7 @@ export default async function CategoryPage({
       .select('id, name, slug, category_no, banner_url, banner_video_url, banner_show_overlay')
       .eq('id', category.parent_id)
       .single()
-    if (parent) rootCategory = { ...parent, level: 1, parent_id: null }
+    if (parent) rootCategory = { ...parent, level: 1, parent_id: null, pagination_mode: null, products_per_row: null, products_per_row_mobile: null, products_rows: null }
   } else if (category.level === 3 && category.parent_id) {
     // 3차 → 2차 부모 찾기 → 1차 부모 찾기
     const { data: parent2 } = await supabase
@@ -76,7 +76,7 @@ export default async function CategoryPage({
         .select('id, name, slug, category_no, banner_url, banner_video_url, banner_show_overlay')
         .eq('id', parent2.parent_id)
         .single()
-      if (parent1) rootCategory = { ...parent1, level: 1, parent_id: null }
+      if (parent1) rootCategory = { ...parent1, level: 1, parent_id: null, pagination_mode: null, products_per_row: null, products_per_row_mobile: null, products_rows: null }
     }
   }
 
@@ -125,6 +125,7 @@ export default async function CategoryPage({
   const paginationMode: 'load_more' | 'pages' =
     (category as { pagination_mode?: 'load_more' | 'pages' }).pagination_mode ?? 'load_more'
   const productsPerRow = (category as { products_per_row?: number }).products_per_row ?? 4
+  const productsPerRowMobile = (category as { products_per_row_mobile?: number }).products_per_row_mobile ?? 2
   const productsRows = (category as { products_rows?: number }).products_rows ?? 10
   const pageSize = Math.max(1, productsPerRow * productsRows)
   const page = paginationMode === 'pages' ? requestedPage : 1
@@ -283,6 +284,7 @@ export default async function CategoryPage({
           fromCategoryId={category.id}
           paginationMode={paginationMode}
           perRow={productsPerRow}
+          perRowMobile={productsPerRowMobile}
           rows={productsRows}
           page={page}
         />
