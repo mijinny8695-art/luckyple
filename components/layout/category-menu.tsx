@@ -27,6 +27,17 @@ export function CategoryMenu({ items }: { items: NavItem[] }) {
     }
   }, [open])
 
+  // admin 디자인 편집기 iframe 안에서 동작할 때, 부모에 드롭다운 열림 상태를 알려 오버레이가 클릭을 가로채지 않도록 한다.
+  useEffect(() => {
+    if (typeof window === 'undefined' || window.parent === window) return
+    try {
+      window.parent.postMessage(
+        { type: 'mall-nav-menu', open },
+        window.location.origin,
+      )
+    } catch {}
+  }, [open])
+
   if (items.length === 0) return null
 
   return (
@@ -44,7 +55,7 @@ export function CategoryMenu({ items }: { items: NavItem[] }) {
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-50 mt-2 min-w-[200px] rounded-xl border border-zinc-100 bg-white py-2 shadow-lg">
+        <div className="absolute left-0 top-full z-[100] mt-2 min-w-[200px] rounded-xl border border-zinc-100 bg-white py-2 shadow-lg">
           {items.map((item, index) => (
             <Link
               key={`${item.href}-${index}`}

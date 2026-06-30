@@ -148,6 +148,8 @@ export function LayoutManager({
   // 헤더 네비게이션 영역 좌표 (iframe document 기준 절대 top + 높이)
   const [navRect, setNavRect] = useState<{ top: number; height: number } | null>(null)
   // 네비 영역 hover 시각효과는 이제 pointer-events-none 으로 동작하므로 hoveredNav 상태는 제거됨
+  // iframe 내부 헤더 햄버거 드롭다운이 열려있는 동안에는 admin 오버레이가 클릭을 가로채지 않도록 한다.
+  const [iframeNavMenuOpen, setIframeNavMenuOpen] = useState(false)
   // 헤더 우측 인증 메뉴 영역
   const [authRect, setAuthRect] = useState<{ top: number; right: number; width: number; height: number } | null>(null)
   const [hoveredAuth, setHoveredAuth] = useState(false)
@@ -192,6 +194,21 @@ export function LayoutManager({
     }, 500)
     return () => clearTimeout(handle)
   }, [sections, dirty, siteId])
+
+  // iframe(mall) 안의 헤더 햄버거 드롭다운 열림/닫힘 알림 수신.
+  // 열려있는 동안에는 admin 측 섹션/회원메뉴 오버레이가 클릭을 가로채지 않도록 한다.
+  useEffect(() => {
+    function onMessage(e: MessageEvent) {
+      if (typeof window === 'undefined') return
+      if (e.origin !== window.location.origin) return
+      const data = e.data as { type?: string; open?: boolean } | null
+      if (data?.type === 'mall-nav-menu') {
+        setIframeNavMenuOpen(!!data.open)
+      }
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
 
   // (toggleVisibility / deleteSection / moveSection 은 iframeRef 가 선언된 아래에서 정의)
 
@@ -1025,10 +1042,14 @@ export function LayoutManager({
                   className="pointer-events-none absolute border-2 border-transparent transition group-hover/nav:border-blue-300"
                   style={{ top: navRect.top, left: 0, width: '100%', height: navRect.height }}
                 >
-                  {/* 좌상단 타입 뱃지 (시각 표시만, 클릭 안 막음) */}
-                  <div className="absolute left-2 top-2 flex items-center gap-1">
-                    <span className="rounded bg-blue-500/90 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
-                      네비 (메뉴 클릭 시 해당 페이지 미리보기)
+                  {/* 좌상단 타입 뱃지 (시각 표시만, 클릭 안 막음).
+                      햄버거 메뉴 버튼(좌상단)을 가리지 않도록 짧게 표시하고 전체 설명은 title 툴팁으로 제공 */}
+                  <div className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    <span
+                      className="rounded bg-blue-500/90 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm"
+                      title="메뉴 클릭 시 해당 페이지 미리보기"
+                    >
+                      네비
                     </span>
                   </div>
                   {/* 우상단 「편집」 버튼만 pointer-events-auto — 네비 스타일 편집용 */}
@@ -1052,7 +1073,9 @@ export function LayoutManager({
                 <div
                   onMouseEnter={() => setHoveredAuth(true)}
                   onMouseLeave={() => setHoveredAuth(false)}
-                  className={`pointer-events-auto absolute transition ${
+                  className={`absolute transition ${
+                    iframeNavMenuOpen ? 'pointer-events-none' : 'pointer-events-auto'
+                  } ${
                     hoveredAuth ? 'border-2 border-purple-500 bg-purple-500/5' : 'border-2 border-transparent hover:border-purple-300'
                   }`}
                   style={{
@@ -1096,7 +1119,9 @@ export function LayoutManager({
                     key={section.id}
                     onMouseEnter={() => setHoveredSectionId(section.id)}
                     onMouseLeave={() => setHoveredSectionId((curr) => (curr === section.id ? null : curr))}
-                    className={`pointer-events-auto absolute transition ${
+                    className={`absolute transition ${
+                      iframeNavMenuOpen ? 'pointer-events-none' : 'pointer-events-auto'
+                    } ${
                       isHovered
                         ? 'border-2 border-blue-500 bg-blue-500/5'
                         : 'border-2 border-transparent hover:border-blue-300'

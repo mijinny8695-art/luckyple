@@ -42,6 +42,17 @@ export function MobileMenu({
     setMounted(true)
   }, [])
 
+  // admin 디자인 편집기 iframe 안에서 동작할 때, 사이드바가 열려있는 동안 부모의 섹션 오버레이가 클릭을 가로채지 않도록 알린다.
+  useEffect(() => {
+    if (typeof window === 'undefined' || window.parent === window) return
+    try {
+      window.parent.postMessage(
+        { type: 'mall-nav-menu', open },
+        window.location.origin,
+      )
+    } catch {}
+  }, [open])
+
   async function handleLogout() {
     if (loggingOut) return
     setLoggingOut(true)
