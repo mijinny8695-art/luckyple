@@ -1,9 +1,15 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { generateSlug } from '@/lib/slug'
 import { copyCloudflareImage } from '@/lib/cloudflare-images'
+import {
+  PRODUCT_IMAGE_COLUMNS,
+  collectImageUrls,
+  filterUnusedImageUrls,
+} from '@/lib/product-images'
 
 export type Product = {
   id: string
@@ -626,7 +632,7 @@ export async function deleteProduct(id: string) {
   // 상품 이미지 정보 먼저 가져오기
   const { data: product } = await supabase
     .from('products')
-    .select('thumbnail_url, sub_images, summary, description')
+    .select(PRODUCT_IMAGE_COLUMNS)
     .eq('id', id)
     .single()
 
@@ -642,45 +648,17 @@ export async function deleteProduct(id: string) {
 
   revalidatePath('/admin/products')
 
-  // Cloudflare 이미지 삭제 (백그라운드 - 클라이언트를 기다리게 하지 않음)
-  if (product) {
-    const imageUrls: string[] = []
-    if (product.thumbnail_url) imageUrls.push(product.thumbnail_url)
-    if (product.sub_images) imageUrls.push(...(product.sub_images as string[]))
-    if (product.summary) {
-      const m = product.summary.match(/https:\/\/imagedelivery\.net\/[^"'\s)]+/g)
-      if (m) imageUrls.push(...m)
-    }
-    if (product.description) {
-      const m = product.description.match(/https:\/\/imagedelivery\.net\/[^"'\s)]+/g)
-      if (m) imageUrls.push(...m)
-    }
-
-    const uniqueUrls = [...new Set(imageUrls)]
-    if (uniqueUrls.length > 0) {
-      // 같은 imageId를 다른 상품이 (썸네일/서브이미지/본문 어디에든) 쓰고 있는지 검사.
-      // 사용 중인 URL은 cloudflare 삭제 skip → 다른 상품의 이미지가 함께 깨지는 사고 방지.
-      const { data: stillUsed } = await supabase
-        .from('products')
-        .select('thumbnail_url, sub_images, summary, description')
-      const inUse = new Set<string>()
-      for (const row of stillUsed ?? []) {
-        if (row.thumbnail_url) inUse.add(row.thumbnail_url)
-        for (const u of (row.sub_images ?? []) as string[]) inUse.add(u)
-        for (const body of [row.summary, row.description]) {
-          if (!body) continue
-          const m = (body as string).match(/https:\/\/imagedelivery\.net\/[^"'\s)]+/g)
-          if (m) for (const u of m) inUse.add(u)
-        }
-      }
-      const toDelete = uniqueUrls.filter((u) => !inUse.has(u))
-      if (toDelete.length > 0) {
-        // fire-and-forget: 응답을 기다리지 않고 백그라운드에서 삭제
-        import('@/lib/cloudflare-images').then(({ deleteFromCloudflare }) => {
-          Promise.allSettled(toDelete.map((url) => deleteFromCloudflare(url)))
-        }).catch(() => {})
-      }
-    }
+  // Cloudflare 이미지 정리는 응답 이후 백그라운드에서 수행한다.
+  // after() 를 쓰면 런타임이 응답을 보낸 뒤에도 함수를 살려두므로,
+  // 관리자는 기다리지 않고 다른 작업을 계속할 수 있다.
+  const candidateUrls = collectImageUrls(product)
+  if (candidateUrls.length > 0) {
+    after(async () => {
+      const urls = await filterUnusedImageUrls(candidateUrls)
+      if (urls.length === 0) return
+      const { deleteFromCloudflare } = await import('@/lib/cloudflare-images')
+      await Promise.allSettled(urls.map((url) => deleteFromCloudflare(url)))
+    })
   }
 
   return { success: true }

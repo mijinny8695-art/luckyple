@@ -1,6 +1,12 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { deleteFromCloudflare } from '@/lib/cloudflare-images'
+import {
+  PRODUCT_IMAGE_COLUMNS,
+  collectImageUrls,
+  filterUnusedImageUrls,
+  type ProductImageRow,
+} from '@/lib/product-images'
 import { revalidatePath } from 'next/cache'
 
 export async function POST(request: Request) {
@@ -11,59 +17,31 @@ export async function POST(request: Request) {
 
   const supabase = await createClient()
 
-  // 1) 삭제 대상의 이미지 URL을 모두 수집 (DB 삭제 전)
-  const collected = new Map<string, string[]>()
-  for (const id of ids) {
-    const { data: product } = await supabase
-      .from('products')
-      .select('thumbnail_url, sub_images, summary, description')
-      .eq('id', id)
-      .single()
-    if (!product) continue
-
-    const imageUrls: string[] = []
-    if (product.thumbnail_url) imageUrls.push(product.thumbnail_url)
-    if (product.sub_images) imageUrls.push(...(product.sub_images as string[]))
-    if (product.summary) {
-      const m = product.summary.match(/https:\/\/imagedelivery\.net\/[^"'\s)]+/g)
-      if (m) imageUrls.push(...m)
-    }
-    if (product.description) {
-      const m = product.description.match(/https:\/\/imagedelivery\.net\/[^"'\s)]+/g)
-      if (m) imageUrls.push(...m)
-    }
-    collected.set(id, [...new Set(imageUrls)])
-  }
-
-  // 2) DB 삭제
-  await supabase.from('products').delete().in('id', ids)
-
-  // 3) 살아있는 다른 상품들이 같은 URL을 쓰고 있는지 확인 → 사용 중이면 cloudflare 삭제 skip
-  const { data: remaining } = await supabase
+  // 1) 삭제 대상의 이미지 URL을 한 번의 쿼리로 수집 (DB 삭제 전이어야 한다)
+  const { data: targets } = await supabase
     .from('products')
-    .select('thumbnail_url, sub_images, summary, description')
-  const inUse = new Set<string>()
-  for (const row of remaining ?? []) {
-    if (row.thumbnail_url) inUse.add(row.thumbnail_url)
-    for (const u of (row.sub_images ?? []) as string[]) inUse.add(u)
-    for (const body of [row.summary, row.description]) {
-      if (!body) continue
-      const m = (body as string).match(/https:\/\/imagedelivery\.net\/[^"'\s)]+/g)
-      if (m) for (const u of m) inUse.add(u)
-    }
-  }
+    .select(PRODUCT_IMAGE_COLUMNS)
+    .in('id', ids)
+  const candidateUrls = collectImageUrls((targets ?? []) as ProductImageRow[])
 
-  // 4) 안전하게 삭제 가능한 URL만 cloudflare 삭제
-  const toDelete = new Set<string>()
-  for (const urls of collected.values()) {
-    for (const u of urls) {
-      if (!inUse.has(u)) toDelete.add(u)
-    }
-  }
-  if (toDelete.size > 0) {
-    await Promise.allSettled([...toDelete].map((u) => deleteFromCloudflare(u)))
+  // 2) DB 삭제 — 관리자가 기다리는 건 여기까지다
+  const { error } = await supabase.from('products').delete().in('id', ids)
+  if (error) {
+    return NextResponse.json({ error: '상품 삭제 중 오류가 발생했습니다.' }, { status: 500 })
   }
 
   revalidatePath('/admin/products')
+
+  // 3) Cloudflare 이미지 정리는 응답 이후 백그라운드에서.
+  //    after() 는 응답을 보낸 뒤에도 런타임이 함수를 살려두므로,
+  //    관리자는 목록으로 바로 돌아가 다른 작업을 계속할 수 있다.
+  if (candidateUrls.length > 0) {
+    after(async () => {
+      const toDelete = await filterUnusedImageUrls(candidateUrls)
+      if (toDelete.length === 0) return
+      await Promise.allSettled(toDelete.map((u) => deleteFromCloudflare(u)))
+    })
+  }
+
   return NextResponse.json({ ok: true, deleted: ids.length })
 }
