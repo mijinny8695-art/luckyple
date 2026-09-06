@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { normalizeDomain } from '@/lib/site'
 
 export type Site = {
   id: string
@@ -68,7 +69,7 @@ export async function getSites() {
 export async function createSite(formData: FormData) {
   const supabase = await createClient()
 
-  const domain = (formData.get('domain') as string).trim()
+  const domain = normalizeDomain(formData.get('domain') as string)
   const name = (formData.get('name') as string).trim()
   const description = (formData.get('description') as string).trim() || null
 
@@ -94,7 +95,7 @@ export async function createSite(formData: FormData) {
 export async function updateSite(id: string, formData: FormData) {
   const supabase = await createClient()
 
-  const domain = (formData.get('domain') as string).trim()
+  const domain = normalizeDomain(formData.get('domain') as string)
   const name = (formData.get('name') as string).trim()
   const description = (formData.get('description') as string).trim() || null
 

@@ -1,6 +1,5 @@
 import { cache } from 'react'
-import { headers } from 'next/headers'
-import { createClient } from '@/lib/supabase/server'
+import { getSiteRow } from '@/lib/site'
 import {
   FIELD_ORDER,
   type FieldKey,
@@ -59,23 +58,6 @@ function fromRow(row: RawRow | null): MemberSettings {
 }
 
 export const getCurrentMemberSettings = cache(async (): Promise<MemberSettings> => {
-  const headersList = await headers()
-  const host = headersList.get('host') ?? 'localhost:3000'
-
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('sites')
-    .select('login_enabled, terms_mode, social_signup_require_terms, terms_all_includes_optional, signup_notice, signup_bonus_points, signup_fields')
-    .eq('domain', host)
-    .single()
-
-  if (data) return fromRow(data as RawRow)
-
-  const { data: fallback } = await supabase
-    .from('sites')
-    .select('login_enabled, terms_mode, social_signup_require_terms, terms_all_includes_optional, signup_notice, signup_bonus_points, signup_fields')
-    .limit(1)
-    .single()
-
-  return fromRow((fallback as RawRow) ?? null)
+  const row = await getSiteRow()
+  return fromRow((row as RawRow | null) ?? null)
 })

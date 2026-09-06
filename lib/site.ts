@@ -19,36 +19,59 @@ export type SiteConfigFull = SiteConfig & {
   layout: LayoutSection[]
 }
 
+// DB에 'https://example.com/' 처럼 저장돼 있어도 host 헤더와 매칭되도록 정규화
+export function normalizeDomain(value: string | null | undefined): string {
+  if (!value) return ''
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/.*$/, '')
+}
+
 const FALLBACK_SITE: SiteConfig = {
   id: '',
   domain: 'localhost:3000',
-  name: 'LUNAVALLEY',
+  name: 'MYEONGPLE',
   description: '',
   logo_url: null,
   footer_info: {},
 }
 
-// React cache: 같은 요청 내 중복 호출 방지
-export const getSiteConfig = cache(async (): Promise<SiteConfig> => {
-  const headersList = await headers()
-  const host = headersList.get('host') ?? 'localhost:3000'
+export type SiteRow = SiteConfig & Record<string, unknown>
 
+// 일시적인 DB 오류로 폴백 브랜드가 노출되지 않도록 한 번 재시도한다.
+async function fetchSites(): Promise<SiteRow[] | null> {
   const supabase = await createClient()
-  const { data } = await supabase
-    .from('sites')
-    .select('*')
-    .eq('domain', host)
-    .single()
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { data, error } = await supabase
+      .from('sites')
+      .select('*')
+      .order('created_at', { ascending: true })
 
-  if (data) return data as SiteConfig
+    if (!error) return (data ?? []) as SiteRow[]
+    if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 200))
+  }
+  return null
+}
 
-  const { data: fallback } = await supabase
-    .from('sites')
-    .select('*')
-    .limit(1)
-    .single()
+// 현재 host 에 해당하는 sites 행 (React cache: 같은 요청 내 중복 호출 방지)
+export const getSiteRow = cache(async (): Promise<SiteRow | null> => {
+  const headersList = await headers()
+  const host = normalizeDomain(headersList.get('host') ?? 'localhost:3000')
 
-  return (fallback as SiteConfig) ?? FALLBACK_SITE
+  const sites = await fetchSites()
+  if (!sites || sites.length === 0) return null
+
+  const matched =
+    sites.find((site) => normalizeDomain(site.domain) === host) ?? sites[0]
+
+  return { ...matched, domain: normalizeDomain(matched.domain) || host }
+})
+
+export const getSiteConfig = cache(async (): Promise<SiteConfig> => {
+  const row = await getSiteRow()
+  return (row as SiteConfig) ?? FALLBACK_SITE
 })
 
 export const getSiteConfigFull = cache(async (): Promise<SiteConfigFull> => {
